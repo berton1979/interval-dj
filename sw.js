@@ -1,10 +1,9 @@
-const CACHE_NAME = 'interval-dj-v1';
+const CACHE_NAME = 'interval-dj-v3';
 const ASSETS = [
-  './interval_dj_app.html',
+  './interval_dj_v2.html',
   './manifest.json'
 ];
 
-// 安裝時快取所有資源
 self.addEventListener('install', function(event) {
   event.waitUntil(
     caches.open(CACHE_NAME).then(function(cache) {
@@ -14,7 +13,6 @@ self.addEventListener('install', function(event) {
   self.skipWaiting();
 });
 
-// 啟動時清除舊快取
 self.addEventListener('activate', function(event) {
   event.waitUntil(
     caches.keys().then(function(keys) {
@@ -27,19 +25,19 @@ self.addEventListener('activate', function(event) {
   self.clients.claim();
 });
 
-// 攔截請求：優先用快取，網路不通時也能開啟
+// 網路優先策略：每次都嘗試從網路抓最新版，失敗才用快取
 self.addEventListener('fetch', function(event) {
   event.respondWith(
-    caches.match(event.request).then(function(cached) {
-      return cached || fetch(event.request).then(function(response) {
-        var clone = response.clone();
-        caches.open(CACHE_NAME).then(function(cache) {
-          cache.put(event.request, clone);
-        });
-        return response;
+    fetch(event.request).then(function(response) {
+      var clone = response.clone();
+      caches.open(CACHE_NAME).then(function(cache) {
+        cache.put(event.request, clone);
       });
+      return response;
     }).catch(function() {
-      return caches.match('./interval_dj_app.html');
+      return caches.match(event.request).then(function(cached) {
+        return cached || caches.match('./interval_dj_v2.html');
+      });
     })
   );
 });
