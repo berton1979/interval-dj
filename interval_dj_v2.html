@@ -1,0 +1,947 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>間歇跑 DJ</title>
+<link rel="manifest" href="manifest.json">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="間歇跑DJ">
+<meta name="theme-color" content="#080810">
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Noto+Sans+TC:wght@300;400;500;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #080810;
+  --surface: #0f0f1a;
+  --surface2: #171728;
+  --surface3: #1e1e32;
+  --run: #ff3d6b;
+  --run-glow: rgba(255,61,107,0.3);
+  --walk: #00d4ff;
+  --walk-glow: rgba(0,212,255,0.3);
+  --zone: #39ff8a;
+  --zone-glow: rgba(57,255,138,0.25);
+  --text: #eeeef8;
+  --text2: #8888aa;
+  --text3: #4a4a6a;
+  --border: rgba(255,255,255,0.06);
+  --border2: rgba(255,255,255,0.12);
+  --font-display: 'Bebas Neue', cursive;
+  --font-body: 'Noto Sans TC', sans-serif;
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bot: env(safe-area-inset-bottom, 0px);
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(--text); font-family: var(--font-body); }
+
+/* ── SCREENS ── */
+.screen { position: fixed; inset: 0; display: flex; flex-direction: column; overflow: hidden; transition: opacity 0.3s, transform 0.3s; }
+.screen.hidden { opacity: 0; pointer-events: none; transform: translateY(20px); }
+
+/* ── NAV BAR ── */
+.nav { display: flex; background: var(--surface); border-top: 1px solid var(--border2); padding-bottom: var(--safe-bot); flex-shrink: 0; position: relative; z-index: 10; }
+.nav-btn { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 10px 4px 8px; border: none; background: none; color: var(--text3); cursor: pointer; font-family: var(--font-body); transition: color 0.2s; }
+.nav-btn.active { color: var(--walk); }
+.nav-btn svg { width: 22px; height: 22px; }
+.nav-label { font-size: 10px; letter-spacing: 0.5px; }
+
+/* ── SCROLL CONTENT ── */
+.content { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 0 16px 24px; padding-top: calc(var(--safe-top) + 16px); }
+
+/* ── HEADER ── */
+.page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+.logo { font-family: var(--font-display); font-size: 28px; letter-spacing: 3px; background: linear-gradient(135deg, var(--walk), var(--run)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+.header-sub { font-size: 11px; color: var(--text3); letter-spacing: 1.5px; text-transform: uppercase; }
+
+/* ── CARDS ── */
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 18px; padding: 18px; margin-bottom: 14px; }
+.card-title { font-size: 10px; font-weight: 600; letter-spacing: 2px; text-transform: uppercase; color: var(--text3); margin-bottom: 14px; }
+
+/* ── IMPORT ZONE ── */
+.import-zone { border: 1.5px dashed var(--border2); border-radius: 16px; padding: 32px 16px; text-align: center; cursor: pointer; transition: all 0.2s; margin-bottom: 14px; background: var(--surface); }
+.import-zone:hover, .import-zone.drag { border-color: var(--walk); background: rgba(0,212,255,0.05); }
+.import-icon { font-size: 36px; margin-bottom: 10px; }
+.import-title { font-size: 15px; font-weight: 500; margin-bottom: 4px; }
+.import-sub { font-size: 12px; color: var(--text2); }
+#fileInput { display: none; }
+
+/* ── SONG LIST ── */
+.song-item { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--border); cursor: pointer; transition: background 0.15s; border-radius: 8px; padding: 10px 8px; }
+.song-item:last-child { border-bottom: none; }
+.song-item:hover { background: var(--surface2); }
+.song-item.selected { background: rgba(0,212,255,0.08); }
+.song-thumb { width: 42px; height: 42px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 18px; flex-shrink: 0; position: relative; overflow: hidden; }
+.song-thumb.run-t { background: linear-gradient(135deg, rgba(255,61,107,0.2), rgba(255,61,107,0.05)); }
+.song-thumb.walk-t { background: linear-gradient(135deg, rgba(0,212,255,0.2), rgba(0,212,255,0.05)); }
+.song-thumb.unknown-t { background: var(--surface3); }
+.song-info { flex: 1; min-width: 0; }
+.song-name { font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.song-meta { font-size: 11px; color: var(--text2); margin-top: 2px; }
+.bpm-chip { font-family: var(--font-display); font-size: 15px; padding: 3px 10px; border-radius: 20px; flex-shrink: 0; }
+.bpm-chip.run-c { background: rgba(255,61,107,0.15); color: var(--run); }
+.bpm-chip.walk-c { background: rgba(0,212,255,0.15); color: var(--walk); }
+.bpm-chip.unknown-c { background: var(--surface3); color: var(--text3); }
+.bpm-chip.analyzing { animation: blink 1s infinite; }
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+/* ── PROGRESS BAR ── */
+.analyze-progress { background: var(--surface3); border-radius: 4px; height: 3px; margin: 10px 0; overflow: hidden; }
+.analyze-fill { height: 100%; background: linear-gradient(90deg, var(--walk), var(--run)); border-radius: 4px; transition: width 0.3s; width: 0%; }
+.analyze-label { font-size: 11px; color: var(--text2); text-align: center; }
+
+/* ── STATS CHIPS ── */
+.stats-row { display: flex; gap: 8px; margin-bottom: 14px; }
+.stat-chip { flex: 1; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 10px 8px; text-align: center; }
+.stat-num { font-family: var(--font-display); font-size: 22px; line-height: 1; }
+.stat-run { color: var(--run); }
+.stat-walk { color: var(--walk); }
+.stat-total { color: var(--text2); }
+.stat-label { font-size: 10px; color: var(--text3); margin-top: 2px; letter-spacing: 0.5px; }
+
+/* ── SETUP SCREEN ── */
+.interval-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.interval-box { background: var(--surface2); border-radius: 14px; padding: 14px; text-align: center; border: 1px solid var(--border); }
+.interval-label { font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--text3); margin-bottom: 8px; }
+.interval-val { font-family: var(--font-display); font-size: 40px; line-height: 1; }
+.run-v { color: var(--run); }
+.walk-v { color: var(--walk); }
+.interval-unit { font-size: 11px; color: var(--text3); margin-top: 2px; }
+.stepper { display: flex; align-items: center; justify-content: center; gap: 16px; margin-top: 10px; }
+.step-btn { width: 32px; height: 32px; border-radius: 50%; border: 1px solid var(--border2); background: var(--surface3); color: var(--text); font-size: 18px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.15s; }
+.step-btn:active { transform: scale(0.9); }
+
+.preset-row { display: flex; gap: 8px; margin-top: 10px; }
+.preset-btn { flex: 1; padding: 8px 4px; background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; color: var(--text3); font-size: 11px; font-family: var(--font-body); cursor: pointer; text-align: center; transition: all 0.2s; }
+.preset-btn.on { border-color: var(--run); color: var(--run); background: rgba(255,61,107,0.08); }
+
+.zone-row { display: flex; gap: 8px; }
+.zone-btn { flex: 1; padding: 12px 8px; background: var(--surface2); border: 1px solid var(--border); border-radius: 14px; text-align: center; cursor: pointer; transition: all 0.2s; font-family: var(--font-body); }
+.zone-btn.on { border-color: var(--zone); background: rgba(57,255,138,0.06); }
+.zone-name { font-size: 12px; font-weight: 600; }
+.zone-btn.on .zone-name { color: var(--zone); }
+.zone-bpm { font-size: 10px; color: var(--text3); margin-top: 3px; }
+
+/* ── PLAYER SCREEN ── */
+.player-content { flex: 1; display: flex; flex-direction: column; padding: 0 20px; padding-top: calc(var(--safe-top) + 12px); overflow: hidden; }
+
+.phase-bar { display: flex; gap: 6px; margin-bottom: 16px; }
+.phase-seg { flex: 1; height: 3px; border-radius: 3px; background: var(--surface3); overflow: hidden; }
+.phase-seg.run-s { background: linear-gradient(90deg, var(--run), transparent); }
+.phase-seg.walk-s { background: linear-gradient(90deg, var(--walk), transparent); }
+.phase-seg.done { opacity: 0.3; }
+
+.now-phase { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.phase-dot { width: 9px; height: 9px; border-radius: 50%; }
+.run-dot { background: var(--run); animation: pDot 0.8s infinite; box-shadow: 0 0 8px var(--run); }
+.walk-dot { background: var(--walk); }
+@keyframes pDot { 0%,100%{transform:scale(1)} 50%{transform:scale(1.5)} }
+.phase-name { font-size: 11px; letter-spacing: 2px; text-transform: uppercase; font-weight: 600; }
+.run-name { color: var(--run); }
+.walk-name { color: var(--walk); }
+
+.song-display { flex: 1; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; padding: 0 8px; }
+.song-art { width: 160px; height: 160px; border-radius: 22px; background: var(--surface2); display: flex; align-items: center; justify-content: center; font-size: 60px; margin-bottom: 20px; border: 1px solid var(--border2); position: relative; overflow: hidden; }
+.song-art::after { content: ''; position: absolute; inset: 0; background: radial-gradient(circle at 30% 30%, rgba(255,255,255,0.05), transparent 60%); }
+.song-art.run-art { box-shadow: 0 0 40px var(--run-glow); border-color: rgba(255,61,107,0.3); }
+.song-art.walk-art { box-shadow: 0 0 40px var(--walk-glow); border-color: rgba(0,212,255,0.3); }
+.now-title { font-size: 20px; font-weight: 700; margin-bottom: 4px; line-height: 1.2; }
+.now-artist { font-size: 13px; color: var(--text2); margin-bottom: 16px; }
+
+.bpm-large { display: flex; align-items: baseline; gap: 4px; justify-content: center; margin-bottom: 6px; }
+.bpm-big { font-family: var(--font-display); font-size: 64px; line-height: 1; }
+.run-big { background: linear-gradient(135deg, var(--run), #ff9a3c); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+.walk-big { background: linear-gradient(135deg, var(--walk), #78ffe5); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+.bpm-unit { font-size: 14px; color: var(--text3); letter-spacing: 1px; }
+
+/* ── TIMER ── */
+.timer-section { margin: 0 0 16px; }
+.timer-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.timer-label { font-size: 11px; color: var(--text3); letter-spacing: 1px; }
+.timer-val { font-family: var(--font-display); font-size: 24px; line-height: 1; }
+.run-time { color: var(--run); }
+.walk-time { color: var(--walk); }
+.timer-bar { height: 4px; background: var(--surface3); border-radius: 4px; overflow: hidden; }
+.timer-fill { height: 100%; border-radius: 4px; transition: width 1s linear; }
+.run-fill { background: linear-gradient(90deg, var(--run), #ff9a3c); }
+.walk-fill { background: linear-gradient(90deg, var(--walk), #78ffe5); }
+
+/* ── CONTROLS ── */
+.controls { display: flex; align-items: center; justify-content: center; gap: 20px; padding-bottom: 12px; }
+.ctrl { width: 48px; height: 48px; border-radius: 50%; background: var(--surface2); border: 1px solid var(--border2); display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--text2); transition: all 0.15s; }
+.ctrl:active { transform: scale(0.92); }
+.ctrl svg { width: 20px; height: 20px; }
+.play-ctrl { width: 68px; height: 68px; border-radius: 50%; background: linear-gradient(135deg, var(--run), #ff8c42); border: none; box-shadow: 0 0 30px var(--run-glow); transition: all 0.2s; color: #fff; }
+.play-ctrl:active { transform: scale(0.94); box-shadow: 0 0 15px var(--run-glow); }
+.play-ctrl.walk-play { background: linear-gradient(135deg, var(--walk), #78ffe5); box-shadow: 0 0 30px var(--walk-glow); color: #000; }
+.play-ctrl svg { width: 26px; height: 26px; }
+
+/* ── SKIP PHASE BTN ── */
+.skip-phase { width: 100%; padding: 12px; background: var(--surface2); border: 1px solid var(--border); border-radius: 14px; color: var(--text2); font-family: var(--font-body); font-size: 12px; letter-spacing: 1px; cursor: pointer; margin-bottom: 12px; transition: all 0.2s; }
+.skip-phase:active { background: var(--surface3); }
+
+/* ── NEXT UP ── */
+.next-up { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 12px 14px; margin-bottom: 8px; display: flex; align-items: center; gap: 10px; }
+.next-label { font-size: 10px; color: var(--text3); letter-spacing: 1.5px; text-transform: uppercase; flex-shrink: 0; }
+.next-title { font-size: 12px; font-weight: 500; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.next-bpm { font-family: var(--font-display); font-size: 14px; color: var(--text3); flex-shrink: 0; }
+
+/* ── EMPTY STATE ── */
+.empty { text-align: center; padding: 40px 20px; }
+.empty-icon { font-size: 48px; margin-bottom: 12px; }
+.empty-title { font-size: 16px; font-weight: 500; margin-bottom: 6px; }
+.empty-sub { font-size: 13px; color: var(--text2); line-height: 1.6; }
+
+/* ── START BTN ── */
+.start-btn { width: 100%; padding: 16px; background: linear-gradient(135deg, var(--run), #ff8c42); border: none; border-radius: 16px; font-family: var(--font-display); font-size: 22px; letter-spacing: 3px; color: #fff; cursor: pointer; box-shadow: 0 8px 24px var(--run-glow); transition: all 0.2s; margin-top: 4px; }
+.start-btn:active { transform: scale(0.98); }
+.start-btn:disabled { background: var(--surface3); color: var(--text3); box-shadow: none; }
+
+/* ── MISC ── */
+.divider { height: 1px; background: var(--border); margin: 14px 0; }
+.tag { display: inline-block; font-size: 10px; padding: 3px 8px; border-radius: 6px; letter-spacing: 0.5px; }
+.run-tag { background: rgba(255,61,107,0.12); color: var(--run); }
+.walk-tag { background: rgba(0,212,255,0.12); color: var(--walk); }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 3px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--surface3); border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<!-- ══════════ LIBRARY SCREEN ══════════ -->
+<div class="screen" id="screen-library">
+  <div class="content">
+    <div class="page-header">
+      <div>
+        <div class="logo">間歇跑 DJ</div>
+        <div class="header-sub">本地音樂 BPM 分析</div>
+      </div>
+    </div>
+
+    <div class="import-zone" id="importZone" onclick="document.getElementById('fileInput').click()">
+      <div class="import-icon">🎵</div>
+      <div class="import-title">匯入音樂檔案</div>
+      <div class="import-sub">支援 MP3、AAC、WAV、FLAC・可一次選多首</div>
+      <input type="file" id="fileInput" multiple accept="audio/*">
+    </div>
+
+    <div id="analyzeSection" style="display:none">
+      <div class="analyze-progress"><div class="analyze-fill" id="analyzeFill"></div></div>
+      <div class="analyze-label" id="analyzeLabel">分析中...</div>
+    </div>
+
+    <div class="stats-row" id="statsRow" style="display:none">
+      <div class="stat-chip">
+        <div class="stat-num stat-total" id="statTotal">0</div>
+        <div class="stat-label">首歌曲</div>
+      </div>
+      <div class="stat-chip">
+        <div class="stat-num stat-run" id="statRun">0</div>
+        <div class="stat-label">跑步段</div>
+      </div>
+      <div class="stat-chip">
+        <div class="stat-num stat-walk" id="statWalk">0</div>
+        <div class="stat-label">走路段</div>
+      </div>
+    </div>
+
+    <div id="songList"></div>
+  </div>
+  <nav class="nav" id="nav-library">
+    <button class="nav-btn active" onclick="switchScreen('library')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+      <span class="nav-label">音樂庫</span>
+    </button>
+    <button class="nav-btn" onclick="switchScreen('setup')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93l-1.41 1.41M4.93 4.93l1.41 1.41M19.07 19.07l-1.41-1.41M4.93 19.07l1.41-1.41M12 2v2M12 20v2M2 12h2M20 12h2"/></svg>
+      <span class="nav-label">設定</span>
+    </button>
+    <button class="nav-btn" onclick="switchScreen('player')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5,3 19,12 5,21"/></svg>
+      <span class="nav-label">播放</span>
+    </button>
+  </nav>
+</div>
+
+<!-- ══════════ SETUP SCREEN ══════════ -->
+<div class="screen hidden" id="screen-setup">
+  <div class="content">
+    <div class="page-header">
+      <div>
+        <div class="logo">設定</div>
+        <div class="header-sub">訓練模式</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">跑走間隔</div>
+      <div class="interval-grid">
+        <div class="interval-box">
+          <div class="interval-label">🏃 跑步</div>
+          <div class="interval-val run-v" id="runValDisplay">3</div>
+          <div class="interval-unit">分鐘</div>
+          <div class="stepper">
+            <button class="step-btn" onclick="adjustInterval('run',-1)">−</button>
+            <button class="step-btn" onclick="adjustInterval('run',1)">+</button>
+          </div>
+        </div>
+        <div class="interval-box">
+          <div class="interval-label">🚶 走路</div>
+          <div class="interval-val walk-v" id="walkValDisplay">1</div>
+          <div class="interval-unit">分鐘</div>
+          <div class="stepper">
+            <button class="step-btn" onclick="adjustInterval('walk',-1)">−</button>
+            <button class="step-btn" onclick="adjustInterval('walk',1)">+</button>
+          </div>
+        </div>
+      </div>
+      <div class="preset-row">
+        <button class="preset-btn" onclick="setPreset(2,1,this)">2:1<br><span style="font-size:9px;color:var(--text3)">初學</span></button>
+        <button class="preset-btn on" onclick="setPreset(3,1,this)">3:1<br><span style="font-size:9px">Galloway</span></button>
+        <button class="preset-btn" onclick="setPreset(4,1,this)">4:1<br><span style="font-size:9px;color:var(--text3)">進階</span></button>
+        <button class="preset-btn" onclick="setPreset(5,1,this)">5:1<br><span style="font-size:9px;color:var(--text3)">馬拉松</span></button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">訓練強度 Zone</div>
+      <div class="zone-row">
+        <div class="zone-btn on" onclick="setZone(this,'160-170')">
+          <div class="zone-name">Zone 2</div>
+          <div class="zone-bpm">160–170 BPM</div>
+        </div>
+        <div class="zone-btn" onclick="setZone(this,'175-185')">
+          <div class="zone-name">配速跑</div>
+          <div class="zone-bpm">175–185 BPM</div>
+        </div>
+        <div class="zone-btn" onclick="setZone(this,'185-200')">
+          <div class="zone-name">衝刺</div>
+          <div class="zone-bpm">185–200 BPM</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">走路段 BPM</div>
+      <div class="zone-row">
+        <div class="zone-btn on" onclick="setWalkZone(this,'115-130')">
+          <div class="zone-name">輕鬆</div>
+          <div class="zone-bpm">115–130 BPM</div>
+        </div>
+        <div class="zone-btn" onclick="setWalkZone(this,'100-115')">
+          <div class="zone-name">緩和</div>
+          <div class="zone-bpm">100–115 BPM</div>
+        </div>
+        <div class="zone-btn" onclick="setWalkZone(this,'80-100')">
+          <div class="zone-name">極緩</div>
+          <div class="zone-bpm">80–100 BPM</div>
+        </div>
+      </div>
+    </div>
+
+    <button class="start-btn" id="startBtn" onclick="startSession()" disabled>
+      開始訓練
+    </button>
+    <div style="font-size:11px;color:var(--text3);text-align:center;margin-top:8px;" id="startHint">請先至音樂庫匯入音樂</div>
+
+  </div>
+  <nav class="nav">
+    <button class="nav-btn" onclick="switchScreen('library')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+      <span class="nav-label">音樂庫</span>
+    </button>
+    <button class="nav-btn active" onclick="switchScreen('setup')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93l-1.41 1.41M4.93 4.93l1.41 1.41M19.07 19.07l-1.41-1.41M4.93 19.07l1.41-1.41M12 2v2M12 20v2M2 12h2M20 12h2"/></svg>
+      <span class="nav-label">設定</span>
+    </button>
+    <button class="nav-btn" onclick="switchScreen('player')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5,3 19,12 5,21"/></svg>
+      <span class="nav-label">播放</span>
+    </button>
+  </nav>
+</div>
+
+<!-- ══════════ PLAYER SCREEN ══════════ -->
+<div class="screen hidden" id="screen-player">
+  <div class="player-content">
+
+    <div class="phase-bar" id="phaseBar"></div>
+
+    <div class="now-phase">
+      <div class="phase-dot run-dot" id="playerPhaseDot"></div>
+      <div class="phase-name run-name" id="playerPhaseLabel">跑步中</div>
+      <div style="margin-left:auto;font-size:11px;color:var(--text3);" id="roundLabel">第 1 輪</div>
+    </div>
+
+    <div class="song-display">
+      <div class="song-art run-art" id="songArt">🎵</div>
+      <div class="now-title" id="playerTitle">等待開始</div>
+      <div class="now-artist" id="playerArtist">選好設定，按下播放</div>
+      <div class="bpm-large">
+        <div class="bpm-big run-big" id="playerBPM">—</div>
+        <div class="bpm-unit">BPM</div>
+      </div>
+    </div>
+
+    <div class="timer-section">
+      <div class="timer-row">
+        <span class="timer-label" id="timerLabel">剩餘時間</span>
+        <span class="timer-val run-time" id="timerDisplay">—:——</span>
+      </div>
+      <div class="timer-bar"><div class="timer-fill run-fill" id="timerFill" style="width:100%"></div></div>
+    </div>
+
+    <div class="controls">
+      <button class="ctrl" onclick="prevSong()">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>
+      </button>
+      <button class="play-ctrl" id="playBtn" onclick="togglePlay()">
+        <svg id="playIcon" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg>
+      </button>
+      <button class="ctrl" onclick="nextSong()">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 18l8.5-6L6 6v12zm2.5-6l5.5 4V8l-5.5 4zm7.5 6h2V6h-2v12z"/></svg>
+      </button>
+    </div>
+
+    <button class="skip-phase" onclick="skipPhase()">跳過此階段 →</button>
+
+    <div class="next-up" id="nextUp">
+      <span class="next-label">即將</span>
+      <span class="next-title" id="nextTitle">—</span>
+      <span class="next-bpm" id="nextBPM">—</span>
+    </div>
+
+  </div>
+  <nav class="nav">
+    <button class="nav-btn" onclick="switchScreen('library')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+      <span class="nav-label">音樂庫</span>
+    </button>
+    <button class="nav-btn" onclick="switchScreen('setup')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93l-1.41 1.41M4.93 4.93l1.41 1.41M19.07 19.07l-1.41-1.41M4.93 19.07l1.41-1.41M12 2v2M12 20v2M2 12h2M20 12h2"/></svg>
+      <span class="nav-label">設定</span>
+    </button>
+    <button class="nav-btn active" onclick="switchScreen('player')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5,3 19,12 5,21"/></svg>
+      <span class="nav-label">播放</span>
+    </button>
+  </nav>
+</div>
+
+<script>
+// ══════════════════════════════════════
+//  STATE
+// ══════════════════════════════════════
+var songs = [];          // {name, bpm, url, phase, file}
+var runSongs = [];
+var walkSongs = [];
+
+var settings = {
+  runMin: 3,
+  walkMin: 1,
+  runBPM: [160, 170],
+  walkBPM: [115, 130]
+};
+
+var session = {
+  active: false,
+  playing: false,
+  isRun: true,
+  round: 1,
+  timer: 0,
+  phaseSec: 0,
+  intervalId: null,
+  runIdx: 0,
+  walkIdx: 0,
+  audio: null
+};
+
+// ══════════════════════════════════════
+//  NAVIGATION
+// ══════════════════════════════════════
+function switchScreen(name) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.add('hidden'));
+  document.getElementById('screen-' + name).classList.remove('hidden');
+}
+
+// ══════════════════════════════════════
+//  FILE IMPORT & BPM DETECTION
+// ══════════════════════════════════════
+document.getElementById('fileInput').addEventListener('change', function(e) {
+  handleFiles(Array.from(e.target.files));
+});
+
+// Drag-drop
+var iz = document.getElementById('importZone');
+iz.addEventListener('dragover', function(e) { e.preventDefault(); iz.classList.add('drag'); });
+iz.addEventListener('dragleave', function() { iz.classList.remove('drag'); });
+iz.addEventListener('drop', function(e) {
+  e.preventDefault(); iz.classList.remove('drag');
+  handleFiles(Array.from(e.dataTransfer.files).filter(f => f.type.startsWith('audio/')));
+});
+
+async function handleFiles(files) {
+  if (!files.length) return;
+  var sec = document.getElementById('analyzeSection');
+  sec.style.display = 'block';
+  var fill = document.getElementById('analyzeFill');
+  var lbl = document.getElementById('analyzeLabel');
+
+  for (var i = 0; i < files.length; i++) {
+    var f = files[i];
+    lbl.textContent = '分析中 ' + (i+1) + '/' + files.length + '：' + f.name;
+    fill.style.width = ((i / files.length) * 100) + '%';
+
+    var url = URL.createObjectURL(f);
+    var name = f.name.replace(/\.[^.]+$/, '');
+
+    // Add placeholder
+    var idx = songs.length;
+    songs.push({name: name, bpm: null, url: url, file: f, phase: 'analyzing'});
+    renderSongList();
+
+    // Detect BPM
+    try {
+      var bpm = await detectBPM(url);
+      songs[idx].bpm = bpm;
+      songs[idx].phase = getBPMPhase(bpm);
+    } catch(e) {
+      songs[idx].bpm = null;
+      songs[idx].phase = 'unknown';
+    }
+    renderSongList();
+    updateStats();
+  }
+
+  fill.style.width = '100%';
+  lbl.textContent = '分析完成！共 ' + songs.length + ' 首';
+  setTimeout(function() { sec.style.display = 'none'; }, 2000);
+  rebuildPlaylists();
+  updateStartBtn();
+}
+
+// ── BPM Detection via Web Audio API ──
+async function detectBPM(url) {
+  return new Promise(function(resolve, reject) {
+    var ctx = new (window.AudioContext || window.webkitAudioContext)();
+    var xhr = new XMLHttpRequest();
+    xhr.open('GET', url, true);
+    xhr.responseType = 'arraybuffer';
+    xhr.onload = function() {
+      ctx.decodeAudioData(xhr.response, function(buffer) {
+        var bpm = analyzeBPM(buffer);
+        ctx.close();
+        resolve(bpm);
+      }, reject);
+    };
+    xhr.onerror = reject;
+    xhr.send();
+  });
+}
+
+function analyzeBPM(buffer) {
+  var sampleRate = buffer.sampleRate;
+  var data = buffer.getChannelData(0);
+
+  // Analyze first 30 seconds only
+  var analyzeLen = Math.min(data.length, sampleRate * 30);
+  var slice = data.slice(0, analyzeLen);
+
+  // Compute energy in 25ms windows with 10ms hop
+  var winSize = Math.floor(sampleRate * 0.025);
+  var hopSize = Math.floor(sampleRate * 0.010);
+  var energies = [];
+
+  for (var i = 0; i + winSize < slice.length; i += hopSize) {
+    var e = 0;
+    for (var j = i; j < i + winSize; j++) e += slice[j] * slice[j];
+    energies.push(Math.sqrt(e / winSize));
+  }
+
+  // Onset strength: positive first-order differences
+  var onsets = [];
+  for (var i = 1; i < energies.length; i++) {
+    onsets.push(Math.max(0, energies[i] - energies[i-1]));
+  }
+
+  // Autocorrelation over BPM range 60–210
+  var fps = sampleRate / hopSize;
+  var minLag = Math.floor(fps * 60 / 210);
+  var maxLag = Math.floor(fps * 60 / 60);
+  var len = onsets.length;
+
+  var bestBPM = 120, bestCorr = -1;
+  for (var lag = minLag; lag <= maxLag; lag++) {
+    var corr = 0, n = len - lag;
+    for (var i = 0; i < n; i++) corr += onsets[i] * onsets[i + lag];
+    corr /= n;
+    if (corr > bestCorr) { bestCorr = corr; bestBPM = (fps * 60) / lag; }
+  }
+
+  // Snap to nearest integer, prefer range 120–200
+  var bpm = Math.round(bestBPM);
+  // If result seems like half-time or double-time, correct it
+  if (bpm < 90) bpm = bpm * 2;
+  if (bpm > 210) bpm = Math.round(bpm / 2);
+
+  return Math.max(60, Math.min(220, bpm));
+}
+
+function getBPMPhase(bpm) {
+  var lo = settings.runBPM[0], hi = settings.runBPM[1];
+  var wlo = settings.walkBPM[0], whi = settings.walkBPM[1];
+  if (bpm >= lo && bpm <= hi) return 'run';
+  if (bpm >= lo - 10 && bpm <= hi + 10) return 'run'; // ±10 tolerance
+  if (bpm >= wlo && bpm <= whi) return 'walk';
+  if (bpm >= wlo - 10 && bpm <= whi + 10) return 'walk';
+  return 'other';
+}
+
+function rebuildPlaylists() {
+  runSongs = songs.filter(s => s.bpm && s.bpm >= settings.runBPM[0] - 15 && s.bpm <= settings.runBPM[1] + 15);
+  walkSongs = songs.filter(s => s.bpm && s.bpm >= settings.walkBPM[0] - 15 && s.bpm <= settings.walkBPM[1] + 15);
+  // Shuffle
+  shuffle(runSongs); shuffle(walkSongs);
+  updateStats();
+}
+
+function shuffle(arr) {
+  for (var i = arr.length - 1; i > 0; i--) {
+    var j = Math.floor(Math.random() * (i + 1));
+    var t = arr[i]; arr[i] = arr[j]; arr[j] = t;
+  }
+}
+
+// ══════════════════════════════════════
+//  RENDER SONG LIST
+// ══════════════════════════════════════
+function renderSongList() {
+  var el = document.getElementById('songList');
+  if (!songs.length) {
+    el.innerHTML = '';
+    return;
+  }
+  document.getElementById('statsRow').style.display = 'flex';
+
+  el.innerHTML = '<div class="card"><div class="card-title">歌曲庫（' + songs.length + ' 首）</div>' +
+    songs.map(function(s, i) {
+      var phase = s.phase;
+      var thumbClass = phase === 'run' ? 'run-t' : phase === 'walk' ? 'walk-t' : 'unknown-t';
+      var chipClass = phase === 'run' ? 'run-c' : phase === 'walk' ? 'walk-c' : (s.bpm ? 'unknown-c' : 'unknown-c analyzing');
+      var emoji = phase === 'run' ? '🏃' : phase === 'walk' ? '🚶' : '🎵';
+      var bpmText = s.bpm ? s.bpm + ' BPM' : '分析中…';
+      var tagHtml = phase === 'run' ? '<span class="tag run-tag">跑步段</span>' :
+                    phase === 'walk' ? '<span class="tag walk-tag">走路段</span>' : '';
+      return '<div class="song-item">' +
+        '<div class="song-thumb ' + thumbClass + '">' + emoji + '</div>' +
+        '<div class="song-info">' +
+          '<div class="song-name">' + s.name + '</div>' +
+          '<div class="song-meta">' + tagHtml + '</div>' +
+        '</div>' +
+        '<span class="bpm-chip ' + chipClass + '">' + bpmText + '</span>' +
+        '</div>';
+    }).join('') + '</div>';
+}
+
+function updateStats() {
+  var run = songs.filter(s => s.phase === 'run').length;
+  var walk = songs.filter(s => s.phase === 'walk').length;
+  document.getElementById('statTotal').textContent = songs.length;
+  document.getElementById('statRun').textContent = run;
+  document.getElementById('statWalk').textContent = walk;
+}
+
+// ══════════════════════════════════════
+//  SETUP CONTROLS
+// ══════════════════════════════════════
+function adjustInterval(type, delta) {
+  if (type === 'run') {
+    settings.runMin = Math.max(1, Math.min(10, settings.runMin + delta));
+    document.getElementById('runValDisplay').textContent = settings.runMin;
+  } else {
+    settings.walkMin = Math.max(1, Math.min(5, settings.walkMin + delta));
+    document.getElementById('walkValDisplay').textContent = settings.walkMin;
+  }
+}
+
+function setPreset(run, walk, btn) {
+  settings.runMin = run; settings.walkMin = walk;
+  document.getElementById('runValDisplay').textContent = run;
+  document.getElementById('walkValDisplay').textContent = walk;
+  document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('on'));
+  btn.classList.add('on');
+}
+
+function setZone(btn, range) {
+  document.querySelectorAll('.zone-row')[0].querySelectorAll('.zone-btn').forEach(b => b.classList.remove('on'));
+  btn.classList.add('on');
+  var parts = range.split('-');
+  settings.runBPM = [parseInt(parts[0]), parseInt(parts[1])];
+  rebuildPlaylists();
+}
+
+function setWalkZone(btn, range) {
+  document.querySelectorAll('.zone-row')[1].querySelectorAll('.zone-btn').forEach(b => b.classList.remove('on'));
+  btn.classList.add('on');
+  var parts = range.split('-');
+  settings.walkBPM = [parseInt(parts[0]), parseInt(parts[1])];
+  rebuildPlaylists();
+}
+
+function updateStartBtn() {
+  var canStart = runSongs.length > 0 || walkSongs.length > 0;
+  document.getElementById('startBtn').disabled = !canStart;
+  document.getElementById('startHint').textContent = canStart ?
+    '跑步段 ' + runSongs.length + ' 首・走路段 ' + walkSongs.length + ' 首' :
+    '請先至音樂庫匯入音樂';
+}
+
+// ══════════════════════════════════════
+//  PLAYER
+// ══════════════════════════════════════
+function startSession() {
+  rebuildPlaylists();
+  session.active = true;
+  session.isRun = true;
+  session.round = 1;
+  session.runIdx = 0;
+  session.walkIdx = 0;
+  session.timer = settings.runMin * 60;
+  session.phaseSec = settings.runMin * 60;
+  switchScreen('player');
+  updatePhaseUI();
+  loadCurrentSong();
+  togglePlay();
+}
+
+function loadCurrentSong() {
+  var list = session.isRun ? runSongs : walkSongs;
+  var idx = session.isRun ? session.runIdx : session.walkIdx;
+
+  if (!list.length) {
+    document.getElementById('playerTitle').textContent = '此 BPM 範圍無歌曲';
+    document.getElementById('playerArtist').textContent = '請回音樂庫新增歌曲';
+    document.getElementById('playerBPM').textContent = '—';
+    return;
+  }
+
+  var song = list[idx % list.length];
+  document.getElementById('playerTitle').textContent = song.name;
+  document.getElementById('playerArtist').textContent = song.bpm + ' BPM・' + (session.isRun ? '跑步段' : '走路段');
+  document.getElementById('playerBPM').textContent = song.bpm || '—';
+
+  var art = document.getElementById('songArt');
+  art.textContent = session.isRun ? '🏃' : '🚶';
+  art.className = 'song-art ' + (session.isRun ? 'run-art' : 'walk-art');
+
+  // Audio
+  if (session.audio) { session.audio.pause(); session.audio = null; }
+  session.audio = new Audio(song.url);
+  session.audio.volume = 1.0;
+  session.audio.onended = nextSong;
+  if (session.playing) session.audio.play().catch(function(){});
+
+  // ── Media Session API：讓鎖屏顯示控制介面、背景繼續播放 ──
+  if ('mediaSession' in navigator) {
+    var phaseLabel = session.isRun ? '🏃 跑步段' : '🚶 走路段';
+    navigator.mediaSession.metadata = new MediaMetadata({
+      title: song.name,
+      artist: phaseLabel + '・' + song.bpm + ' BPM',
+      album: '間歇跑 DJ',
+      artwork: [
+        { src: 'data:image/svg+xml,' + encodeURIComponent(
+          '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">' +
+          '<rect width="256" height="256" fill="' + (session.isRun ? '%23ff3d6b' : '%2300d4ff') + '" rx="40"/>' +
+          '<text x="128" y="160" text-anchor="middle" font-size="120">' +
+          (session.isRun ? '🏃' : '🚶') + '</text></svg>'
+        ), sizes: '256x256', type: 'image/svg+xml' }
+      ]
+    });
+
+    navigator.mediaSession.playbackState = 'playing';
+
+    navigator.mediaSession.setActionHandler('play', function() {
+      if (!session.playing) togglePlay();
+    });
+    navigator.mediaSession.setActionHandler('pause', function() {
+      if (session.playing) togglePlay();
+    });
+    navigator.mediaSession.setActionHandler('nexttrack', function() {
+      nextSong();
+    });
+    navigator.mediaSession.setActionHandler('previoustrack', function() {
+      prevSong();
+    });
+    navigator.mediaSession.setActionHandler('stop', function() {
+      if (session.playing) togglePlay();
+    });
+  }
+
+  updateNextUp();
+}
+
+function updateNextUp() {
+  var isNextRun, nextIdx, list;
+  // Figure out what comes next
+  if (session.timer <= 0 || true) {
+    // Next phase
+    isNextRun = !session.isRun; // after current phase
+    if (isNextRun) {
+      nextIdx = session.runIdx % runSongs.length;
+      list = runSongs;
+    } else {
+      nextIdx = session.walkIdx % walkSongs.length;
+      list = walkSongs;
+    }
+  }
+  var song = list && list.length ? list[nextIdx] : null;
+  if (song) {
+    document.getElementById('nextTitle').textContent = (isNextRun ? '🏃 ' : '🚶 ') + song.name;
+    document.getElementById('nextBPM').textContent = song.bpm + ' BPM';
+  } else {
+    document.getElementById('nextTitle').textContent = '—';
+    document.getElementById('nextBPM').textContent = '';
+  }
+}
+
+function togglePlay() {
+  session.playing = !session.playing;
+  var icon = document.getElementById('playIcon');
+  var btn = document.getElementById('playBtn');
+
+  if (session.playing) {
+    icon.innerHTML = '<rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/>';
+    btn.classList.toggle('walk-play', !session.isRun);
+    if (session.audio) session.audio.play().catch(function(){});
+    if (!session.intervalId) session.intervalId = setInterval(tick, 1000);
+    if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
+    requestWakeLock();
+  } else {
+    icon.innerHTML = '<polygon points="5,3 19,12 5,21"/>';
+    if (session.audio) session.audio.pause();
+    clearInterval(session.intervalId);
+    session.intervalId = null;
+    if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
+  }
+}
+
+function tick() {
+  session.timer--;
+  if (session.timer <= 0) {
+    switchPhase();
+  } else {
+    updateTimerUI();
+  }
+}
+
+function switchPhase() {
+  session.isRun = !session.isRun;
+  if (session.isRun) session.round++;
+  session.timer = (session.isRun ? settings.runMin : settings.walkMin) * 60;
+  session.phaseSec = session.timer;
+
+  if (session.isRun) session.runIdx++;
+  else session.walkIdx++;
+
+  updatePhaseUI();
+  loadCurrentSong();
+  updateTimerUI();
+}
+
+function updatePhaseUI() {
+  var isRun = session.isRun;
+  var dot = document.getElementById('playerPhaseDot');
+  var lbl = document.getElementById('playerPhaseLabel');
+  var timerEl = document.getElementById('timerDisplay');
+  var fill = document.getElementById('timerFill');
+  var timerLabel = document.getElementById('timerLabel');
+
+  dot.className = 'phase-dot ' + (isRun ? 'run-dot' : 'walk-dot');
+  lbl.className = 'phase-name ' + (isRun ? 'run-name' : 'walk-name');
+  lbl.textContent = isRun ? '跑步中' : '走路恢復';
+
+  timerEl.className = 'timer-val ' + (isRun ? 'run-time' : 'walk-time');
+  fill.className = 'timer-fill ' + (isRun ? 'run-fill' : 'walk-fill');
+  timerLabel.textContent = isRun ? '剩餘跑步時間' : '剩餘走路時間';
+
+  var bpmEl = document.getElementById('playerBPM');
+  bpmEl.className = 'bpm-big ' + (isRun ? 'run-big' : 'walk-big');
+
+  var playBtn = document.getElementById('playBtn');
+  playBtn.className = 'play-ctrl' + (isRun ? '' : ' walk-play');
+
+  document.getElementById('roundLabel').textContent = '第 ' + session.round + ' 輪';
+  updateTimerUI();
+}
+
+function updateTimerUI() {
+  var m = Math.floor(session.timer / 60);
+  var s = session.timer % 60;
+  document.getElementById('timerDisplay').textContent = m + ':' + (s < 10 ? '0' : '') + s;
+  var pct = (session.timer / session.phaseSec) * 100;
+  document.getElementById('timerFill').style.width = pct + '%';
+}
+
+function nextSong() {
+  if (session.isRun) session.runIdx++;
+  else session.walkIdx++;
+  loadCurrentSong();
+}
+
+function prevSong() {
+  if (session.isRun) session.runIdx = Math.max(0, session.runIdx - 1);
+  else session.walkIdx = Math.max(0, session.walkIdx - 1);
+  loadCurrentSong();
+}
+
+function skipPhase() {
+  session.timer = 0;
+  switchPhase();
+}
+
+// ══════════════════════════════════════
+//  PWA + WAKE LOCK + BACKGROUND AUDIO
+// ══════════════════════════════════════
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', function() {
+    navigator.serviceWorker.register('./sw.js').catch(function(){});
+  });
+}
+
+// Wake Lock：保持螢幕亮著
+var wakeLockSentinel = null;
+async function requestWakeLock() {
+  if ('wakeLock' in navigator) {
+    try {
+      wakeLockSentinel = await navigator.wakeLock.request('screen');
+    } catch(e) {}
+  }
+}
+
+// 螢幕重新亮起時（用戶查看手機）重新申請 Wake Lock
+document.addEventListener('visibilitychange', function() {
+  if (document.visibilityState === 'visible' && session.playing) {
+    requestWakeLock();
+    // 確保 audio 繼續播放（部分瀏覽器在背景後需要重啟）
+    if (session.audio && session.audio.paused && session.playing) {
+      session.audio.play().catch(function(){});
+    }
+  }
+});
+
+// iOS install hint
+var isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+if (isIOS && !window.navigator.standalone) {
+  var iosHint = document.createElement('div');
+  iosHint.style.cssText = 'position:fixed;bottom:80px;left:16px;right:16px;background:#1e1e32;border:1px solid rgba(0,212,255,0.3);border-radius:14px;padding:12px 14px;font-size:12px;color:#8888aa;line-height:1.7;z-index:999;';
+  iosHint.innerHTML = '📱 <strong style="color:#eeeef8">加入主畫面</strong>：點工具列分享按鈕 → 加入主畫面';
+  document.body.appendChild(iosHint);
+  setTimeout(function(){ iosHint.style.opacity='0'; iosHint.style.transition='opacity 1s'; setTimeout(function(){iosHint.remove()},1000); }, 5000);
+}
+</script>
+</body>
+</html>
