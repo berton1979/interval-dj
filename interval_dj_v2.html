@@ -959,32 +959,37 @@ function skipPhase() {
 }
 
 // ══════════════════════════════════════
-//  PWA + WAKE LOCK + BACKGROUND AUDIO
+//  SERVICE WORKER：強制清除舊快取
 // ══════════════════════════════════════
 if ('serviceWorker' in navigator) {
+  // 先解除所有舊的 Service Worker
+  navigator.serviceWorker.getRegistrations().then(function(regs) {
+    regs.forEach(function(reg) { reg.unregister(); });
+  });
+  // 清除所有快取
+  if ('caches' in window) {
+    caches.keys().then(function(keys) {
+      keys.forEach(function(k) { caches.delete(k); });
+    });
+  }
+  // 重新註冊乾淨的 SW
   window.addEventListener('load', function() {
     navigator.serviceWorker.register('./sw.js').catch(function(){});
   });
 }
 
-// Wake Lock：保持螢幕亮著
+// Wake Lock
 var wakeLockSentinel = null;
 async function requestWakeLock() {
   if ('wakeLock' in navigator) {
-    try {
-      wakeLockSentinel = await navigator.wakeLock.request('screen');
-    } catch(e) {}
+    try { wakeLockSentinel = await navigator.wakeLock.request('screen'); } catch(e) {}
   }
 }
 
-// 螢幕重新亮起時（用戶查看手機）重新申請 Wake Lock
 document.addEventListener('visibilitychange', function() {
   if (document.visibilityState === 'visible' && session.playing) {
     requestWakeLock();
-    // 確保 audio 繼續播放（部分瀏覽器在背景後需要重啟）
-    if (session.audio && session.audio.paused && session.playing) {
-      session.audio.play().catch(function(){});
-    }
+    if (session.audio && session.audio.paused) session.audio.play().catch(function(){});
   }
 });
 
@@ -992,10 +997,10 @@ document.addEventListener('visibilitychange', function() {
 var isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
 if (isIOS && !window.navigator.standalone) {
   var iosHint = document.createElement('div');
-  iosHint.style.cssText = 'position:fixed;bottom:80px;left:16px;right:16px;background:#1e1e32;border:1px solid rgba(0,212,255,0.3);border-radius:14px;padding:12px 14px;font-size:12px;color:#8888aa;line-height:1.7;z-index:999;';
+  iosHint.style.cssText = 'position:fixed;bottom:80px;left:16px;right:16px;background:#1e1e32;border:1px solid rgba(0,212,255,0.3);border-radius:14px;padding:12px 14px;font-size:12px;color:#8888aa;line-height:1.7;z-index:998;';
   iosHint.innerHTML = '📱 <strong style="color:#eeeef8">加入主畫面</strong>：點工具列分享按鈕 → 加入主畫面';
   document.body.appendChild(iosHint);
-  setTimeout(function(){ iosHint.style.opacity='0'; iosHint.style.transition='opacity 1s'; setTimeout(function(){iosHint.remove()},1000); }, 5000);
+  setTimeout(function(){ iosHint.style.opacity='0'; iosHint.style.transition='opacity 1s'; setTimeout(function(){iosHint.remove();},1000); }, 5000);
 }
 </script>
 <!-- BPM Edit Modal -->
