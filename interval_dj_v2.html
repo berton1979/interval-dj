@@ -524,8 +524,21 @@ async function handleFiles(files) {
   updateStartBtn();
 }
 
-// ── BPM Detection via Web Audio API ──
+// ── BPM Detection via music-tempo library ──
+var musicTempoLoaded = false;
+function loadMusicTempo() {
+  return new Promise(function(resolve) {
+    if (musicTempoLoaded) { resolve(); return; }
+    var s = document.createElement('script');
+    s.src = 'https://unpkg.com/music-tempo@1.4.1/dist/music-tempo.js';
+    s.onload = function() { musicTempoLoaded = true; resolve(); };
+    s.onerror = function() { resolve(); }; // fallback gracefully
+    document.head.appendChild(s);
+  });
+}
+
 async function detectBPM(url) {
+  await loadMusicTempo();
   return new Promise(function(resolve, reject) {
     var ctx = new (window.AudioContext || window.webkitAudioContext)();
     var xhr = new XMLHttpRequest();
@@ -533,9 +546,35 @@ async function detectBPM(url) {
     xhr.responseType = 'arraybuffer';
     xhr.onload = function() {
       ctx.decodeAudioData(xhr.response, function(buffer) {
-        var bpm = analyzeBPM(buffer);
-        ctx.close();
-        resolve(bpm);
+        try {
+          if (window.MusicTempo) {
+            // Use music-tempo library (much more accurate)
+            var audioData = [];
+            for (var c = 0; c < buffer.numberOfChannels; c++) {
+              audioData.push(buffer.getChannelData(c));
+            }
+            // Merge to mono
+            var mono = new Float32Array(audioData[0].length);
+            for (var i = 0; i < mono.length; i++) {
+              var s = 0;
+              for (var c = 0; c < audioData.length; c++) s += audioData[c][i];
+              mono[i] = s / audioData.length;
+            }
+            var mt = new MusicTempo(mono, { sampleRate: buffer.sampleRate });
+            var bpm = Math.round(mt.tempo);
+            ctx.close();
+            resolve(Math.max(60, Math.min(220, bpm)));
+          } else {
+            // Fallback to built-in algorithm
+            var bpm = analyzeBPM(buffer);
+            ctx.close();
+            resolve(bpm);
+          }
+        } catch(e) {
+          var bpm = analyzeBPM(buffer);
+          ctx.close();
+          resolve(bpm);
+        }
       }, reject);
     };
     xhr.onerror = reject;
@@ -544,50 +583,31 @@ async function detectBPM(url) {
 }
 
 function analyzeBPM(buffer) {
-  var sampleRate = buffer.sampleRate;
-  var data = buffer.getChannelData(0);
-
-  // Analyze first 30 seconds only
-  var analyzeLen = Math.min(data.length, sampleRate * 30);
-  var slice = data.slice(0, analyzeLen);
-
-  // Compute energy in 25ms windows with 10ms hop
-  var winSize = Math.floor(sampleRate * 0.025);
-  var hopSize = Math.floor(sampleRate * 0.010);
-  var energies = [];
-
-  for (var i = 0; i + winSize < slice.length; i += hopSize) {
-    var e = 0;
-    for (var j = i; j < i + winSize; j++) e += slice[j] * slice[j];
-    energies.push(Math.sqrt(e / winSize));
+  var sr = buffer.sampleRate;
+  var raw = buffer.getChannelData(0);
+  var hop = Math.floor(sr * 0.01);
+  var win = Math.floor(sr * 0.025);
+  var nf = Math.floor((Math.min(raw.length, sr * 60) - win) / hop);
+  var rms = new Float32Array(nf);
+  for (var i = 0; i < nf; i++) {
+    var sum = 0, s = i * hop;
+    for (var j = s; j < s + win; j++) sum += raw[j] * raw[j];
+    rms[i] = Math.sqrt(sum / win);
   }
-
-  // Onset strength: positive first-order differences
-  var onsets = [];
-  for (var i = 1; i < energies.length; i++) {
-    onsets.push(Math.max(0, energies[i] - energies[i-1]));
+  var onset = new Float32Array(nf);
+  for (var i = 1; i < nf; i++) onset[i] = Math.max(0, rms[i] - rms[i-1]);
+  var fps = sr / hop;
+  var lMin = Math.floor(fps * 60 / 210), lMax = Math.floor(fps * 60 / 60);
+  var best = 120, bestC = -1;
+  for (var lag = lMin; lag <= lMax; lag++) {
+    var c = 0, n = nf - lag;
+    for (var i = 0; i < n; i++) c += onset[i] * onset[i + lag];
+    c /= n;
+    if (c > bestC) { bestC = c; best = fps * 60 / lag; }
   }
-
-  // Autocorrelation over BPM range 60–210
-  var fps = sampleRate / hopSize;
-  var minLag = Math.floor(fps * 60 / 210);
-  var maxLag = Math.floor(fps * 60 / 60);
-  var len = onsets.length;
-
-  var bestBPM = 120, bestCorr = -1;
-  for (var lag = minLag; lag <= maxLag; lag++) {
-    var corr = 0, n = len - lag;
-    for (var i = 0; i < n; i++) corr += onsets[i] * onsets[i + lag];
-    corr /= n;
-    if (corr > bestCorr) { bestCorr = corr; bestBPM = (fps * 60) / lag; }
-  }
-
-  // Snap to nearest integer, prefer range 120–200
-  var bpm = Math.round(bestBPM);
-  // If result seems like half-time or double-time, correct it
-  if (bpm < 90) bpm = bpm * 2;
-  if (bpm > 210) bpm = Math.round(bpm / 2);
-
+  var bpm = Math.round(best);
+  if (bpm < 90) bpm *= 2;
+  if (bpm > 200) bpm = Math.round(bpm / 2);
   return Math.max(60, Math.min(220, bpm));
 }
 
@@ -601,7 +621,42 @@ function getBPMPhase(bpm) {
   return 'other';
 }
 
-function rebuildPlaylists() {
+function editBPM(idx) {
+  var s = songs[idx];
+  if (s.phase === 'analyzing') return;
+  var modal = document.getElementById('bpmModal');
+  var title = document.getElementById('bpmModalTitle');
+  var input = document.getElementById('bpmModalInput');
+  title.textContent = s.name;
+  input.value = s.bpm || '';
+  modal.style.display = 'flex';
+  modal.dataset.idx = idx;
+  setTimeout(function() { input.focus(); input.select(); }, 100);
+}
+
+function closeBPMModal() {
+  document.getElementById('bpmModal').style.display = 'none';
+}
+
+function saveBPMModal() {
+  var modal = document.getElementById('bpmModal');
+  var idx = parseInt(modal.dataset.idx);
+  var val = parseInt(document.getElementById('bpmModalInput').value);
+  if (isNaN(val) || val < 60 || val > 220) {
+    document.getElementById('bpmModalError').style.display = 'block';
+    return;
+  }
+  document.getElementById('bpmModalError').style.display = 'none';
+  songs[idx].bpm = val;
+  songs[idx].phase = getBPMPhase(val);
+  closeBPMModal();
+  renderSongList();
+  updateStats();
+  rebuildPlaylists();
+  updateStartBtn();
+}
+
+
   runSongs = songs.filter(s => s.bpm && s.bpm >= settings.runBPM[0] - 15 && s.bpm <= settings.runBPM[1] + 15);
   walkSongs = songs.filter(s => s.bpm && s.bpm >= settings.walkBPM[0] - 15 && s.bpm <= settings.walkBPM[1] + 15);
   // Shuffle
@@ -636,11 +691,11 @@ function renderSongList() {
       var bpmText = s.bpm ? s.bpm + ' BPM' : '分析中…';
       var tagHtml = phase === 'run' ? '<span class="tag run-tag">跑步段</span>' :
                     phase === 'walk' ? '<span class="tag walk-tag">走路段</span>' : '';
-      return '<div class="song-item">' +
+      return '<div class="song-item" onclick="editBPM(' + i + ')">' +
         '<div class="song-thumb ' + thumbClass + '">' + emoji + '</div>' +
         '<div class="song-info">' +
           '<div class="song-name">' + s.name + '</div>' +
-          '<div class="song-meta">' + tagHtml + '</div>' +
+          '<div class="song-meta">' + tagHtml + '<span style="font-size:10px;color:var(--text3);margin-left:4px;">點擊修正 BPM</span></div>' +
         '</div>' +
         '<span class="bpm-chip ' + chipClass + '">' + bpmText + '</span>' +
         '</div>';
@@ -943,5 +998,24 @@ if (isIOS && !window.navigator.standalone) {
   setTimeout(function(){ iosHint.style.opacity='0'; iosHint.style.transition='opacity 1s'; setTimeout(function(){iosHint.remove()},1000); }, 5000);
 }
 </script>
+<!-- BPM Edit Modal -->
+<div id="bpmModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:999;align-items:center;justify-content:center;padding:24px;">
+  <div style="background:var(--surface);border:1px solid var(--border2);border-radius:20px;padding:24px;width:100%;max-width:340px;">
+    <div style="font-size:11px;color:var(--text3);letter-spacing:1.5px;text-transform:uppercase;margin-bottom:6px;">修正 BPM</div>
+    <div id="bpmModalTitle" style="font-size:14px;font-weight:500;margin-bottom:18px;color:var(--text);line-height:1.4;word-break:break-all;"></div>
+    <div style="margin-bottom:8px;">
+      <input id="bpmModalInput" type="number" min="60" max="220"
+        style="width:100%;background:var(--surface2);border:1px solid var(--border2);border-radius:12px;padding:14px 16px;font-size:28px;font-family:var(--font-display);color:var(--text);text-align:center;letter-spacing:2px;outline:none;"
+        onkeydown="if(event.key==='Enter')saveBPMModal()">
+    </div>
+    <div id="bpmModalError" style="display:none;font-size:12px;color:var(--run);margin-bottom:8px;text-align:center;">請輸入 60–220 之間的數字</div>
+    <div style="font-size:11px;color:var(--text3);text-align:center;margin-bottom:18px;">BPM 範圍：60–220</div>
+    <div style="display:flex;gap:10px;">
+      <button onclick="closeBPMModal()" style="flex:1;padding:14px;background:var(--surface2);border:1px solid var(--border);border-radius:14px;color:var(--text2);font-family:var(--font-body);font-size:14px;cursor:pointer;">取消</button>
+      <button onclick="saveBPMModal()" style="flex:2;padding:14px;background:linear-gradient(135deg,var(--walk),#78ffe5);border:none;border-radius:14px;color:#000;font-family:var(--font-body);font-size:14px;font-weight:700;cursor:pointer;">確認儲存</button>
+    </div>
+  </div>
+</div>
+
 </body>
 </html>
