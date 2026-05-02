@@ -1,0 +1,24 @@
+{
+  "name": "間歇跑 DJ",
+  "short_name": "間歇跑DJ",
+  "description": "根據跑走節奏自動切換 BPM 的智慧跑步音樂播放器",
+  "start_url": "./interval_dj_app.html",
+  "display": "standalone",
+  "background_color": "#0a0a0f",
+  "theme_color": "#0a0a0f",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
