@@ -45,7 +45,14 @@ input{background:#222;border:1px solid #444;color:#eee;padding:8px;border-radius
   <div id="rbResult"></div>
 </div>
 
-<!-- STEP 4: Full pipeline test -->
+<!-- STEP 5: ReccoBeats Audio Upload -->
+<div class="section">
+  <h3>Step 5：ReccoBeats 音訊上傳分析（不需要資料庫）</h3>
+  <p style="font-size:12px;color:#888">直接上傳 MP3/WAV 檔案，ReccoBeats 分析前 30 秒，回傳 BPM（不依賴資料庫，任何歌都能用）</p>
+  <input type="file" id="audioFile" accept=".mp3,.wav,.ogg,.aiff" style="background:var(--s2,#222);border:1px solid #444;color:#eee;padding:8px;border-radius:6px;width:100%;margin:4px 0;">
+  <button onclick="testAudioUpload()">上傳分析 BPM</button>
+  <div id="audioResult"></div>
+</div>
 <div class="section">
   <h3>Step 4：完整流程測試（歌單 → ReccoBeats BPM）</h3>
   <p style="font-size:12px;color:#888">從歌單讀前 5 首歌，用 ReccoBeats 查各自的 BPM</p>
@@ -271,6 +278,51 @@ async function testFullPipeline() {
   }
   html += '</table>';
   log('pipeResult', html);
+}
+
+// ══ STEP 5: ReccoBeats Audio Upload ══
+async function testAudioUpload() {
+  var fileInput = document.getElementById('audioFile');
+  var file = fileInput.files[0];
+  if (!file) { log('audioResult', '❌ 請先選擇音訊檔案', 'err'); return; }
+
+  // 檔案大小檢查（5MB 上限）
+  if (file.size > 5 * 1024 * 1024) {
+    log('audioResult', '⚠ 檔案超過 5MB，ReccoBeats 只分析前 30 秒，建議先剪輯', 'warn');
+  }
+
+  log('audioResult', '⏳ 上傳分析中（只取前 30 秒）…', 'warn');
+
+  try {
+    var formData = new FormData();
+    formData.append('audioFile', file);
+
+    var res = await fetch('https://api.reccobeats.com/v1/analysis/audio-features', {
+      method: 'POST',
+      body: formData
+      // 不設定 Content-Type，讓瀏覽器自動加 boundary
+    });
+
+    var d = await res.json();
+
+    if (!res.ok) {
+      log('audioResult', '❌ HTTP ' + res.status + '<pre>' + JSON.stringify(d,null,2) + '</pre>', 'err');
+      return;
+    }
+
+    var bpm = d.tempo ? Math.round(d.tempo) : null;
+    var html = '';
+    if (bpm) {
+      html += '<span class="ok" style="font-size:18px">✓ BPM = <strong style="color:#ffd60a;font-size:32px">' + bpm + '</strong></span><br><br>';
+    } else {
+      html += '<span class="warn">⚠ 無法取得 BPM</span><br>';
+    }
+    html += '<b>完整回傳資料：</b><pre>' + JSON.stringify(d,null,2) + '</pre>';
+    log('audioResult', html);
+
+  } catch(e) {
+    log('audioResult', '❌ 錯誤: ' + e.message, 'err');
+  }
 }
 
 // Init
