@@ -743,24 +743,6 @@ function shuf(a) {
   for (var i=a.length-1;i>0;i--){var j=Math.floor(Math.random()*(i+1)),t=a[i];a[i]=a[j];a[j]=t;}
 }
 
-function renderTracks() {
-  var el = document.getElementById('trackList');
-  if (!songs.length) { el.innerHTML=''; return; }
-  var html = '<div class="card"><div class="st">歌曲 BPM 分類 <span style="font-weight:400;color:var(--t3)">（點擊可修正）</span></div>';
-  songs.forEach(function(s, i) {
-    var bc = s.phase==='run'?'rc':s.phase==='walk'?'wc':'oc';
-    var tag = s.phase==='run'?'<span style="font-size:10px;color:var(--run)">跑步段</span>':
-              s.phase==='walk'?'<span style="font-size:10px;color:var(--walk)">走路段</span>':
-              '<span style="font-size:10px;color:var(--t3)">未分類</span>';
-    html += '<div class="track" onclick="openM('+i+')">' +
-      (s.img?'<img class="t-img" src="'+s.img+'" onerror="this.style.display=\'none\'">':'<div class="t-img" style="display:flex;align-items:center;justify-content:center;font-size:16px;">🎵</div>') +
-      '<div class="t-info"><div class="t-name">'+s.name+'</div><div class="t-artist">'+tag+' '+s.artist+'</div></div>' +
-      '<span class="bpm-chip '+bc+'">'+(s.bpm||'?')+'</span>' +
-      '</div>';
-  });
-  html += '</div>';
-  el.innerHTML = html;
-}
 
 // ══════════════════════════════
 //  BPM MODAL
