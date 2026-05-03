@@ -584,33 +584,77 @@ function renderPlaylists(items) {
     sec.innerHTML = '<div style="text-align:center;padding:24px;color:var(--t3);font-size:13px;">找不到歌單</div>';
     return;
   }
-  // 儲存歌單資料到全域，用 index 避免特殊字元問題
   window._playlists = items.filter(function(pl){ return pl; });
-  sec.innerHTML = window._playlists.map(function(pl, idx) {
+  var html = '';
+  window._playlists.forEach(function(pl, idx) {
     var img = pl.images && pl.images.length ? pl.images[0].url : '';
     var sel = pl.id === selectedPlaylistId;
-    var total = pl.tracks && pl.tracks.total != null ? pl.tracks.total : 0;
-    return '<div class="pl-item' + (sel?' selected':'') + '" onclick="selectPlaylistByIdx('+idx+')">' +
-      (img ? '<img class="pl-img" src="'+img+'" onerror="this.style.display=\'none\'">' : '<div class="pl-img" style="display:flex;align-items:center;justify-content:center;font-size:20px;">🎵</div>') +
-      '<div class="pl-info"><div class="pl-name">'+pl.name+'</div><div class="pl-meta">'+total+' 首歌曲</div></div>' +
-      '<div class="pl-check">'+(sel?'✓':'')+'</div>' +
+    var total = (pl.tracks && pl.tracks.total != null) ? pl.tracks.total : 0;
+    var imgHtml = img
+      ? '<img class="pl-img" src="' + img + '" alt="">'
+      : '<div class="pl-img" style="display:flex;align-items:center;justify-content:center;font-size:20px;">🎵</div>';
+    html += '<div class="pl-item' + (sel ? ' selected' : '') + '" data-idx="' + idx + '">' +
+      imgHtml +
+      '<div class="pl-info"><div class="pl-name">' + pl.name + '</div><div class="pl-meta">' + total + ' 首歌曲</div></div>' +
+      '<div class="pl-check">' + (sel ? '✓' : '') + '</div>' +
       '</div>';
-  }).join('');
+  });
+  sec.innerHTML = html;
+  // 用事件委派，避免 onclick 屬性的引號問題
+  sec.addEventListener('click', function(e) {
+    var item = e.target.closest('.pl-item');
+    if (!item) return;
+    var idx = parseInt(item.getAttribute('data-idx'));
+    selectPlaylistByIdx(idx);
+  });
+}
+
+function renderTracks() {
+  var el = document.getElementById('trackList');
+  if (!songs.length) { el.innerHTML = ''; return; }
+  var html = '<div class="card"><div class="st">歌曲 BPM 分類 <span style="font-weight:400;color:var(--t3)">（點擊可修正）</span></div>';
+  songs.forEach(function(s, i) {
+    var bc = s.phase === 'run' ? 'rc' : s.phase === 'walk' ? 'wc' : 'oc';
+    var tagColor = s.phase === 'run' ? 'var(--run)' : s.phase === 'walk' ? 'var(--walk)' : 'var(--t3)';
+    var tagText = s.phase === 'run' ? '跑步段' : s.phase === 'walk' ? '走路段' : '未分類';
+    var imgHtml = s.img
+      ? '<img class="t-img" src="' + s.img + '" alt="">'
+      : '<div class="t-img" style="display:flex;align-items:center;justify-content:center;font-size:16px;">🎵</div>';
+    html += '<div class="track" data-idx="' + i + '">' +
+      imgHtml +
+      '<div class="t-info">' +
+        '<div class="t-name">' + s.name + '</div>' +
+        '<div class="t-artist"><span style="font-size:10px;color:' + tagColor + '">' + tagText + '</span> ' + s.artist + '</div>' +
+      '</div>' +
+      '<span class="bpm-chip ' + bc + '">' + (s.bpm || '?') + '</span>' +
+      '</div>';
+  });
+  html += '</div>';
+  el.innerHTML = html;
+  // 事件委派
+  el.addEventListener('click', function(e) {
+    var item = e.target.closest('.track');
+    if (!item) return;
+    var idx = parseInt(item.getAttribute('data-idx'));
+    openM(idx);
+  });
 }
 
 function selectPlaylistByIdx(idx) {
-  var pl = window._playlists[idx];
+  var pl = window._playlists && window._playlists[idx];
   if (!pl) return;
-  var total = pl.tracks && pl.tracks.total != null ? pl.tracks.total : 0;
+  var total = (pl.tracks && pl.tracks.total != null) ? pl.tracks.total : 0;
   selectedPlaylistId = pl.id;
-  document.querySelectorAll('.pl-item').forEach(function(el){ el.classList.remove('selected'); el.querySelector('.pl-check').textContent=''; });
-  document.querySelectorAll('.pl-item')[idx].classList.add('selected');
-  document.querySelectorAll('.pl-item')[idx].querySelector('.pl-check').textContent='✓';
-  loadPlaylistTracks(pl.id, pl.name, total);
-}
-
-async function loadPlaylistTracks(playlistId, playlistName, total) {
-  var analyzeSection = document.getElementById('analyzeSection');
+  document.querySelectorAll('.pl-item').forEach(function(el) {
+    el.classList.remove('selected');
+    el.querySelector('.pl-check').textContent = '';
+  });
+  var items = document.querySelectorAll('.pl-item');
+  if (items[idx]) {
+    items[idx].classList.add('selected');
+    items[idx].querySelector('.pl-check').textContent = '✓';
+  }
+async function loadPlaylistTracks(playlistId, playlistName, total) {  var analyzeSection = document.getElementById('analyzeSection');
   var progFill = document.getElementById('progFill');
   var progLbl = document.getElementById('progLbl');
   analyzeSection.style.display = 'block';
