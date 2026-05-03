@@ -513,8 +513,20 @@ function isReady() { return SP.token && Date.now() < SP.expiry; }
 //  SPOTIFY API CALLS
 // ══════════════════════════════
 async function spFetch(url) {
-  var res = await fetch(url, { headers: { Authorization: 'Bearer ' + SP.token } });
-  if (!res.ok) throw new Error('Spotify API error ' + res.status);
+  var res = await fetch(url, {
+    method: 'GET',
+    headers: {
+      'Authorization': 'Bearer ' + SP.token,
+      'Accept': 'application/json',
+      'Content-Type': 'application/json'
+    }
+  });
+  if (!res.ok) {
+    var body = '';
+    try { body = await res.text(); } catch(e) {}
+    console.error('Spotify API error', res.status, url, body);
+    throw new Error(res.status + ': ' + (body.substring(0,300) || res.statusText));
+  }
   return res.json();
 }
 
@@ -531,23 +543,38 @@ async function loadUserProfile() {
     if (!SP.isPremium) {
       document.getElementById('premNotice').style.display = 'block';
     }
-  } catch(e) {}
+    console.log('User profile OK, isPremium:', SP.isPremium);
+  } catch(e) {
+    console.error('loadUserProfile failed:', e);
+  }
 }
 
 async function loadPlaylists() {
   var sec = document.getElementById('playlistSection');
   sec.innerHTML = '<div style="text-align:center;padding:24px;color:var(--t3);font-size:13px;">載入中…</div>';
   try {
+    // 先用最小請求測試 API 是否可用
+    console.log('Testing API access...');
+    var test = await spFetch('https://api.spotify.com/v1/me/playlists?limit=1');
+    console.log('API test OK, total playlists:', test.total);
+
     var items = [];
     var url = 'https://api.spotify.com/v1/me/playlists?limit=50';
     while (url) {
       var d = await spFetch(url);
-      items = items.concat(d.items);
+      console.log('Playlist batch:', d.items ? d.items.length : 'no items', 'next:', d.next);
+      items = items.concat(d.items || []);
       url = d.next;
     }
+    console.log('Total playlists loaded:', items.length);
     renderPlaylists(items);
   } catch(e) {
-    sec.innerHTML = '<div style="text-align:center;padding:24px;color:var(--run);font-size:13px;">載入失敗，請重新連結</div>';
+    console.error('loadPlaylists failed:', e);
+    sec.innerHTML = '<div style="background:var(--s2);border-radius:12px;padding:16px;font-size:12px;color:var(--t2);line-height:1.8;">' +
+      '<div style="color:var(--run);font-weight:500;margin-bottom:8px;">❌ 載入失敗</div>' +
+      '<div style="color:var(--t3);word-break:break-all;">' + e.message + '</div>' +
+      '<div style="margin-top:12px;"><button onclick="disconnect()" style="background:var(--run);border:none;border-radius:10px;padding:8px 16px;color:#fff;font-family:var(--fb);font-size:12px;cursor:pointer;">重新連結</button></div>' +
+      '</div>';
   }
 }
 
