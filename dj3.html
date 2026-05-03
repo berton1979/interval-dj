@@ -1,0 +1,900 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>間歇跑 DJ</title>
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#050508">
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Noto+Sans+TC:wght@300;400;500;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg:#050508;
+  --s1:#0a0a10;
+  --s2:#111118;
+  --s3:#18181f;
+  --s4:#202028;
+  --run:#ff2d55;
+  --rg:rgba(255,45,85,.25);
+  --walk:#00c8ff;
+  --wg:rgba(0,200,255,.22);
+  --sp:#1db954;
+  --acc:#ffd60a;
+  --t1:#f5f5fa;
+  --t2:#8080a0;
+  --t3:#36364a;
+  --bd:rgba(255,255,255,.06);
+  --bd2:rgba(255,255,255,.12);
+  --ff:'Bebas Neue',cursive;
+  --fb:'Noto Sans TC',sans-serif;
+  --sat:env(safe-area-inset-top,0px);
+  --sab:env(safe-area-inset-bottom,0px);
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--t1);font-family:var(--fb);}
+
+/* ── SCREENS ── */
+.scr{position:fixed;inset:0;display:flex;flex-direction:column;transition:opacity .3s,transform .3s;}
+.scr.off{opacity:0;pointer-events:none;transform:translateY(18px);}
+
+/* ── NAV ── */
+.nav{display:flex;background:var(--s1);border-top:1px solid var(--bd2);padding-bottom:var(--sab);flex-shrink:0;}
+.nb{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;padding:10px 4px 8px;border:none;background:none;color:var(--t3);cursor:pointer;font-family:var(--fb);transition:color .2s;}
+.nb.on{color:var(--walk);}
+.nb svg{width:20px;height:20px;}
+.nl{font-size:10px;letter-spacing:.3px;}
+
+/* ── SCROLL ── */
+.pg{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:0 16px 28px;padding-top:calc(var(--sat) + 16px);}
+
+/* ── LOGO ── */
+.logo{font-family:var(--ff);font-size:32px;letter-spacing:4px;background:linear-gradient(120deg,var(--walk) 0%,var(--run) 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;}
+.logo-sub{font-size:10px;color:var(--t3);letter-spacing:2.5px;text-transform:uppercase;}
+.ph{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px;}
+
+/* ── CONNECT CARD ── */
+.connect-card{background:linear-gradient(135deg,#0d2a1a,#0a1a10);border:1px solid rgba(29,185,84,.25);border-radius:20px;padding:24px 20px;margin-bottom:16px;text-align:center;}
+.sp-logo{font-size:40px;margin-bottom:12px;}
+.connect-title{font-family:var(--ff);font-size:26px;letter-spacing:2px;color:var(--sp);margin-bottom:6px;}
+.connect-desc{font-size:13px;color:var(--t2);line-height:1.6;margin-bottom:20px;}
+.sp-btn{width:100%;padding:15px;background:var(--sp);border:none;border-radius:14px;font-family:var(--ff);font-size:20px;letter-spacing:2px;color:#000;cursor:pointer;transition:all .2s;}
+.sp-btn:active{transform:scale(.97);}
+
+/* ── CONNECTED STATE ── */
+.user-bar{display:flex;align-items:center;gap:12px;background:var(--s2);border:1px solid var(--bd2);border-radius:16px;padding:12px 14px;margin-bottom:16px;}
+.user-img{width:40px;height:40px;border-radius:50%;background:var(--s3);flex-shrink:0;object-fit:cover;}
+.user-name{font-size:14px;font-weight:500;flex:1;}
+.user-tag{font-size:11px;color:var(--sp);}
+.disc-btn{font-size:11px;color:var(--t3);background:none;border:1px solid var(--bd2);border-radius:10px;padding:5px 10px;cursor:pointer;font-family:var(--fb);}
+
+/* ── SECTION TITLE ── */
+.st{font-size:10px;font-weight:600;letter-spacing:2.5px;text-transform:uppercase;color:var(--t3);margin-bottom:10px;}
+
+/* ── PLAYLIST LIST ── */
+.pl-item{display:flex;align-items:center;gap:12px;padding:10px;border-radius:14px;cursor:pointer;border:1px solid transparent;transition:all .15s;margin-bottom:8px;background:var(--s1);}
+.pl-item:active{background:var(--s2);}
+.pl-item.selected{border-color:var(--walk);background:rgba(0,200,255,.06);}
+.pl-img{width:48px;height:48px;border-radius:10px;background:var(--s3);flex-shrink:0;object-fit:cover;}
+.pl-info{flex:1;min-width:0;}
+.pl-name{font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.pl-meta{font-size:11px;color:var(--t2);margin-top:2px;}
+.pl-check{width:22px;height:22px;border-radius:50%;border:1.5px solid var(--t3);display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .2s;}
+.pl-item.selected .pl-check{background:var(--walk);border-color:var(--walk);color:#000;}
+
+/* ── ANALYZE PROGRESS ── */
+.prog-card{background:var(--s1);border:1px solid var(--bd);border-radius:16px;padding:16px;margin-bottom:14px;}
+.prog-bar{height:3px;background:var(--s3);border-radius:3px;overflow:hidden;margin:8px 0;}
+.prog-fill{height:100%;background:linear-gradient(90deg,var(--walk),var(--run));border-radius:3px;transition:width .3s;}
+.prog-lbl{font-size:12px;color:var(--t2);text-align:center;}
+
+/* ── STATS ── */
+.stats{display:flex;gap:8px;margin-bottom:14px;}
+.stat{flex:1;background:var(--s1);border:1px solid var(--bd);border-radius:12px;padding:10px 6px;text-align:center;}
+.stat-n{font-family:var(--ff);font-size:26px;line-height:1;}
+.rn{color:var(--run);}
+.wn{color:var(--walk);}
+.tn{color:var(--t2);}
+.stat-l{font-size:10px;color:var(--t3);margin-top:1px;}
+
+/* ── TRACK LIST ── */
+.track{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:12px;cursor:pointer;border-bottom:1px solid var(--bd);transition:background .15s;}
+.track:last-child{border-bottom:none;}
+.track:active{background:var(--s2);}
+.t-img{width:40px;height:40px;border-radius:8px;background:var(--s3);flex-shrink:0;object-fit:cover;}
+.t-info{flex:1;min-width:0;}
+.t-name{font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.t-artist{font-size:11px;color:var(--t2);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.bpm-chip{font-family:var(--ff);font-size:15px;padding:3px 10px;border-radius:14px;flex-shrink:0;}
+.rc{background:rgba(255,45,85,.14);color:var(--run);}
+.wc{background:rgba(0,200,255,.14);color:var(--walk);}
+.oc{background:var(--s3);color:var(--t3);}
+
+/* ── SETUP ── */
+.card{background:var(--s1);border:1px solid var(--bd);border-radius:18px;padding:16px;margin-bottom:14px;}
+.ig{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;}
+.ib{background:var(--s2);border:1px solid var(--bd);border-radius:14px;padding:14px;text-align:center;}
+.il{font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:var(--t3);margin-bottom:6px;}
+.iv{font-family:var(--ff);font-size:44px;line-height:1;}
+.rv{color:var(--run);}
+.wv{color:var(--walk);}
+.iu{font-size:11px;color:var(--t3);margin-top:2px;}
+.stp{display:flex;align-items:center;justify-content:center;gap:14px;margin-top:10px;}
+.sb{width:34px;height:34px;border-radius:50%;border:1px solid var(--bd2);background:var(--s3);color:var(--t1);font-size:20px;cursor:pointer;display:flex;align-items:center;justify-content:center;}
+.sb:active{transform:scale(.88);}
+.pr{display:flex;gap:8px;margin-top:10px;}
+.pb{flex:1;padding:8px 4px;background:var(--s2);border:1px solid var(--bd);border-radius:10px;color:var(--t3);font-size:11px;font-family:var(--fb);cursor:pointer;text-align:center;}
+.pb.on{border-color:var(--run);color:var(--run);background:rgba(255,45,85,.08);}
+.zr{display:flex;gap:8px;}
+.zb{flex:1;padding:11px 6px;background:var(--s2);border:1px solid var(--bd);border-radius:13px;text-align:center;cursor:pointer;font-family:var(--fb);}
+.zb.on{border-color:var(--acc);background:rgba(255,214,10,.06);}
+.zn{font-size:12px;font-weight:600;}
+.zb.on .zn{color:var(--acc);}
+.zp{font-size:10px;color:var(--t3);margin-top:2px;}
+.stbtn{width:100%;padding:16px;background:linear-gradient(135deg,var(--run),#ff6b35);border:none;border-radius:16px;font-family:var(--ff);font-size:22px;letter-spacing:3px;color:#fff;cursor:pointer;box-shadow:0 6px 24px var(--rg);margin-top:4px;transition:all .2s;}
+.stbtn:disabled{background:var(--s3);color:var(--t3);box-shadow:none;}
+.hint{font-size:11px;color:var(--t3);text-align:center;margin-top:8px;}
+
+/* ── PLAYER ── */
+.plc{flex:1;display:flex;flex-direction:column;padding:0 18px;padding-top:calc(var(--sat)+10px);overflow:hidden;}
+.pph{display:flex;align-items:center;gap:8px;margin-bottom:6px;}
+.ppd{width:9px;height:9px;border-radius:50%;}
+.rpd{background:var(--run);box-shadow:0 0 8px var(--run);}
+.wpd{background:var(--walk);}
+@keyframes pd{0%,100%{transform:scale(1)}50%{transform:scale(1.6)}}
+.ppd.pulse{animation:pd .8s infinite;}
+.ppn{font-size:11px;letter-spacing:2px;text-transform:uppercase;font-weight:600;}
+.rpn{color:var(--run);}
+.wpn{color:var(--walk);}
+.rnd{margin-left:auto;font-size:11px;color:var(--t3);}
+
+.sd{flex:1;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;padding:0 8px;}
+.sa{width:150px;height:150px;border-radius:22px;background:var(--s2);display:flex;align-items:center;justify-content:center;font-size:60px;margin-bottom:16px;border:1px solid var(--bd2);transition:box-shadow .5s,border-color .5s;overflow:hidden;flex-shrink:0;}
+.sa img{width:100%;height:100%;object-fit:cover;}
+.rsa{box-shadow:0 0 40px var(--rg);border-color:rgba(255,45,85,.35);}
+.wsa{box-shadow:0 0 40px var(--wg);border-color:rgba(0,200,255,.35);}
+.pt{font-size:18px;font-weight:700;margin-bottom:2px;line-height:1.2;}
+.pa{font-size:12px;color:var(--t2);margin-bottom:12px;}
+.bdr{display:flex;align-items:baseline;gap:4px;justify-content:center;}
+.bb{font-family:var(--ff);font-size:64px;line-height:1;}
+.rbb{background:linear-gradient(135deg,var(--run),#ff9a3c);-webkit-background-clip:text;-webkit-text-fill-color:transparent;}
+.wbb{background:linear-gradient(135deg,var(--walk),#78ffe5);-webkit-background-clip:text;-webkit-text-fill-color:transparent;}
+.bu{font-size:13px;color:var(--t3);letter-spacing:1px;}
+
+.ts{margin:0 0 12px;}
+.tr{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;}
+.tl{font-size:11px;color:var(--t3);letter-spacing:.6px;}
+.tv{font-family:var(--ff);font-size:22px;}
+.rt{color:var(--run);}
+.wt{color:var(--walk);}
+.tb{height:4px;background:var(--s3);border-radius:4px;overflow:hidden;}
+.tf{height:100%;border-radius:4px;transition:width 1s linear;}
+.rtf{background:linear-gradient(90deg,var(--run),#ff9a3c);}
+.wtf{background:linear-gradient(90deg,var(--walk),#78ffe5);}
+
+.ctrl{display:flex;align-items:center;justify-content:center;gap:18px;padding-bottom:10px;}
+.cb{width:48px;height:48px;border-radius:50%;background:var(--s2);border:1px solid var(--bd2);display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--t2);}
+.cb:active{transform:scale(.9);}
+.cb svg{width:20px;height:20px;}
+.pb2{width:68px;height:68px;border-radius:50%;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .2s;}
+.rpb{background:linear-gradient(135deg,var(--run),#ff6b35);box-shadow:0 0 28px var(--rg);}
+.wpb{background:linear-gradient(135deg,var(--walk),#78ffe5);box-shadow:0 0 28px var(--wg);}
+.pb2:active{transform:scale(.93);}
+.pb2 svg{width:26px;height:26px;}
+
+.sk{width:100%;padding:11px;background:var(--s2);border:1px solid var(--bd);border-radius:13px;color:var(--t2);font-family:var(--fb);font-size:12px;letter-spacing:.6px;cursor:pointer;margin-bottom:10px;}
+.nu{background:var(--s1);border:1px solid var(--bd);border-radius:13px;padding:10px 14px;display:flex;align-items:center;gap:10px;}
+.nl2{font-size:10px;color:var(--t3);letter-spacing:1.5px;text-transform:uppercase;flex-shrink:0;}
+.nt{font-size:12px;font-weight:500;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.nb2{font-family:var(--ff);font-size:14px;color:var(--t3);flex-shrink:0;}
+
+/* ── PREMIUM NOTICE ── */
+.prem{background:rgba(255,214,10,.07);border:1px solid rgba(255,214,10,.2);border-radius:14px;padding:12px 14px;font-size:12px;color:var(--t2);line-height:1.6;margin-bottom:14px;}
+
+/* ── MODAL ── */
+.modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.78);z-index:1000;align-items:center;justify-content:center;padding:20px;}
+.modal.show{display:flex;}
+.mbox{background:var(--s1);border:1px solid var(--bd2);border-radius:20px;padding:22px;width:100%;max-width:340px;}
+.mtop{font-size:10px;color:var(--t3);letter-spacing:2px;text-transform:uppercase;margin-bottom:5px;}
+.mtitle{font-size:13px;font-weight:500;color:var(--t1);line-height:1.4;word-break:break-all;margin-bottom:18px;}
+.minput{width:100%;background:var(--s2);border:1.5px solid var(--bd2);border-radius:12px;padding:14px;font-size:32px;font-family:var(--ff);color:var(--t1);text-align:center;letter-spacing:2px;outline:none;appearance:textfield;}
+.minput:focus{border-color:var(--walk);}
+.merr{display:none;font-size:11px;color:var(--run);text-align:center;margin:6px 0;}
+.msub{font-size:11px;color:var(--t3);text-align:center;margin:6px 0 16px;}
+.mbtns{display:flex;gap:10px;}
+.mcancel{flex:1;padding:13px;background:var(--s2);border:1px solid var(--bd);border-radius:13px;color:var(--t2);font-family:var(--fb);font-size:14px;cursor:pointer;}
+.msave{flex:2;padding:13px;background:linear-gradient(135deg,var(--walk),#78ffe5);border:none;border-radius:13px;color:#000;font-family:var(--fb);font-size:14px;font-weight:700;cursor:pointer;}
+
+::-webkit-scrollbar{width:3px;}
+::-webkit-scrollbar-thumb{background:var(--s4);border-radius:3px;}
+</style>
+</head>
+<body>
+
+<!-- ══ LIBRARY SCREEN ══ -->
+<div class="scr" id="s-lib">
+  <div class="pg">
+    <div class="ph">
+      <div><div class="logo">間歇跑 DJ</div><div class="logo-sub">Spotify 歌單模式</div></div>
+    </div>
+
+    <!-- 未連結狀態 -->
+    <div id="connectSection">
+      <div class="connect-card">
+        <div class="sp-logo">🎧</div>
+        <div class="connect-title">連結 Spotify</div>
+        <div class="connect-desc">
+          連結後即可從你的 Spotify 歌單<br>
+          自動讀取每首歌的精確 BPM<br>
+          再也不用手動輸入
+        </div>
+        <button class="sp-btn" onclick="spotifyLogin()">連結 Spotify 帳號</button>
+      </div>
+    </div>
+
+    <!-- 已連結狀態 -->
+    <div id="connectedSection" style="display:none">
+      <div class="user-bar">
+        <img class="user-img" id="userImg" src="" alt="">
+        <div>
+          <div class="user-name" id="userName">載入中…</div>
+          <div class="user-tag">✓ Spotify 已連結</div>
+        </div>
+        <button class="disc-btn" onclick="disconnect()">中斷</button>
+      </div>
+
+      <div class="prem" id="premNotice" style="display:none">
+        ⚠ 播放控制需要 <strong style="color:var(--acc)">Spotify Premium</strong>。免費帳號仍可分析 BPM 和規劃歌單，但需要在 Spotify APP 手動切歌。
+      </div>
+
+      <div class="st">選擇歌單</div>
+      <div id="playlistSection">
+        <div style="text-align:center;padding:24px;color:var(--t3);font-size:13px;">載入歌單中…</div>
+      </div>
+
+      <div id="analyzeSection" style="display:none">
+        <div class="prog-card">
+          <div class="st">分析 BPM 中</div>
+          <div class="prog-bar"><div class="prog-fill" id="progFill"></div></div>
+          <div class="prog-lbl" id="progLbl">準備中…</div>
+        </div>
+      </div>
+
+      <div class="stats" id="statsRow" style="display:none">
+        <div class="stat"><div class="stat-n tn" id="stot">0</div><div class="stat-l">首歌</div></div>
+        <div class="stat"><div class="stat-n rn" id="srun">0</div><div class="stat-l">跑步段</div></div>
+        <div class="stat"><div class="stat-n wn" id="swalk">0</div><div class="stat-l">走路段</div></div>
+      </div>
+
+      <div id="trackList"></div>
+    </div>
+  </div>
+  <nav class="nav">
+    <button class="nb on" onclick="go('lib')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg><span class="nl">歌單</span></button>
+    <button class="nb" onclick="go('set')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93l-1.41 1.41M4.93 4.93l1.41 1.41M19.07 19.07l-1.41-1.41M4.93 19.07l1.41-1.41M12 2v2M12 20v2M2 12h2M20 12h2"/></svg><span class="nl">設定</span></button>
+    <button class="nb" onclick="go('play')"><svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg><span class="nl">播放</span></button>
+  </nav>
+</div>
+
+<!-- ══ SETUP SCREEN ══ -->
+<div class="scr off" id="s-set">
+  <div class="pg">
+    <div class="ph"><div><div class="logo">設定</div><div class="logo-sub">訓練模式</div></div></div>
+    <div class="card">
+      <div class="st">跑走間隔</div>
+      <div class="ig">
+        <div class="ib">
+          <div class="il">🏃 跑步</div>
+          <div class="iv rv" id="rdisp">3</div>
+          <div class="iu">分鐘</div>
+          <div class="stp">
+            <button class="sb" onclick="adj('r',-1)">−</button>
+            <button class="sb" onclick="adj('r',1)">+</button>
+          </div>
+        </div>
+        <div class="ib">
+          <div class="il">🚶 走路</div>
+          <div class="iv wv" id="wdisp">1</div>
+          <div class="iu">分鐘</div>
+          <div class="stp">
+            <button class="sb" onclick="adj('w',-1)">−</button>
+            <button class="sb" onclick="adj('w',1)">+</button>
+          </div>
+        </div>
+      </div>
+      <div class="pr">
+        <button class="pb" onclick="preset(2,1,this)">2:1<br><span style="font-size:9px;color:var(--t3)">初學</span></button>
+        <button class="pb on" onclick="preset(3,1,this)">3:1<br><span style="font-size:9px">Galloway</span></button>
+        <button class="pb" onclick="preset(4,1,this)">4:1<br><span style="font-size:9px;color:var(--t3)">進階</span></button>
+        <button class="pb" onclick="preset(5,1,this)">5:1<br><span style="font-size:9px;color:var(--t3)">馬拉松</span></button>
+      </div>
+    </div>
+    <div class="card">
+      <div class="st">跑步段 BPM 範圍</div>
+      <div class="zr" id="zr1">
+        <div class="zb on" onclick="setZ(0,this,'160-170')"><div class="zn">Zone 2</div><div class="zp">160–170</div></div>
+        <div class="zb" onclick="setZ(0,this,'170-180')"><div class="zn">配速跑</div><div class="zp">170–180</div></div>
+        <div class="zb" onclick="setZ(0,this,'180-200')"><div class="zn">衝刺</div><div class="zp">180–200</div></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="st">走路段 BPM 範圍</div>
+      <div class="zr" id="zr2">
+        <div class="zb on" onclick="setZ(1,this,'115-130')"><div class="zn">輕鬆</div><div class="zp">115–130</div></div>
+        <div class="zb" onclick="setZ(1,this,'100-115')"><div class="zn">緩和</div><div class="zp">100–115</div></div>
+        <div class="zb" onclick="setZ(1,this,'80-100')"><div class="zn">極緩</div><div class="zp">80–100</div></div>
+      </div>
+    </div>
+    <button class="stbtn" id="stbtn" onclick="startSession()" disabled>開始訓練</button>
+    <div class="hint" id="shint">請先連結 Spotify 並選擇歌單</div>
+  </div>
+  <nav class="nav">
+    <button class="nb" onclick="go('lib')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg><span class="nl">歌單</span></button>
+    <button class="nb on" onclick="go('set')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93l-1.41 1.41M4.93 4.93l1.41 1.41M19.07 19.07l-1.41-1.41M4.93 19.07l1.41-1.41M12 2v2M12 20v2M2 12h2M20 12h2"/></svg><span class="nl">設定</span></button>
+    <button class="nb" onclick="go('play')"><svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg><span class="nl">播放</span></button>
+  </nav>
+</div>
+
+<!-- ══ PLAYER SCREEN ══ -->
+<div class="scr off" id="s-play">
+  <div class="plc">
+    <div class="pph">
+      <div class="ppd rpd pulse" id="ppd"></div>
+      <div class="ppn rpn" id="ppn">跑步中</div>
+      <div class="rnd" id="rnd">第 1 輪</div>
+    </div>
+    <div class="sd">
+      <div class="sa rsa" id="sa"><span id="saEmoji">🏃</span></div>
+      <div class="pt" id="pt">等待開始</div>
+      <div class="pa" id="pa">選好設定，按下播放</div>
+      <div class="bdr">
+        <div class="bb rbb" id="pbpm">—</div>
+        <div class="bu">BPM</div>
+      </div>
+    </div>
+    <div class="ts">
+      <div class="tr">
+        <span class="tl" id="tlbl">剩餘時間</span>
+        <span class="tv rt" id="tval">—:——</span>
+      </div>
+      <div class="tb"><div class="tf rtf" id="tf" style="width:100%"></div></div>
+    </div>
+    <div class="ctrl">
+      <button class="cb" onclick="prevS()"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg></button>
+      <button class="pb2 rpb" id="playb" onclick="togglePlay()"><svg id="pico" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg></button>
+      <button class="cb" onclick="nextS()"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 18l8.5-6L6 6v12zm2.5-6l5.5 4V8l-5.5 4zm7.5 6h2V6h-2v12z"/></svg></button>
+    </div>
+    <button class="sk" onclick="skipPhase()">跳過此階段 →</button>
+    <div class="nu">
+      <span class="nl2">即將</span>
+      <span class="nt" id="nxt">—</span>
+      <span class="nb2" id="nxtb">—</span>
+    </div>
+  </div>
+  <nav class="nav">
+    <button class="nb" onclick="go('lib')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg><span class="nl">歌單</span></button>
+    <button class="nb" onclick="go('set')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93l-1.41 1.41M4.93 4.93l1.41 1.41M19.07 19.07l-1.41-1.41M4.93 19.07l1.41-1.41M12 2v2M12 20v2M2 12h2M20 12h2"/></svg><span class="nl">設定</span></button>
+    <button class="nb on" onclick="go('play')"><svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg><span class="nl">播放</span></button>
+  </nav>
+</div>
+
+<!-- ══ BPM MODAL ══ -->
+<div class="modal" id="modal">
+  <div class="mbox">
+    <div class="mtop">手動修正 BPM</div>
+    <div class="mtitle" id="mtitle"></div>
+    <input class="minput" id="minput" type="number" min="60" max="220" inputmode="numeric" onkeydown="if(event.key==='Enter')saveM()">
+    <div class="merr" id="merr">請輸入 60–220 的整數</div>
+    <div class="msub">Spotify 提供的 BPM 通常很準確，僅在明顯錯誤時修正</div>
+    <div class="mbtns">
+      <button class="mcancel" onclick="closeM()">取消</button>
+      <button class="msave" onclick="saveM()">確認</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ══════════════════════════════
+//  STATE
+// ══════════════════════════════
+var SP = {
+  clientId: '28fc753aed184f1ba18f509ce6abee11',
+  redirectUri: 'https://berton1979.github.io/interval-dj/dj3.html',
+  token: null,
+  expiry: 0,
+  isPremium: false
+};
+
+var songs = [], runSongs = [], walkSongs = [];
+var cfg = { rMin:3, wMin:1, rBPM:[160,170], wBPM:[115,130] };
+var ses = { on:false, playing:false, isRun:true, round:1,
+            timer:0, phaseSec:0, tid:null, ri:0, wi:0, audio:null };
+var selectedPlaylistId = null;
+
+// ══════════════════════════════
+//  NAV
+// ══════════════════════════════
+function go(name) {
+  ['lib','set','play'].forEach(function(n) {
+    document.getElementById('s-'+n).classList.toggle('off', n!==name);
+  });
+  document.querySelectorAll('.nb').forEach(function(b,i) {
+    b.classList.toggle('on', ['lib','set','play'][i]===name);
+  });
+}
+
+// ══════════════════════════════
+//  SPOTIFY PKCE AUTH
+// ══════════════════════════════
+function b64url(buf) {
+  return btoa(String.fromCharCode.apply(null,new Uint8Array(buf)))
+    .replace(/\+/g,'-').replace(/\//g,'_').replace(/=/g,'');
+}
+
+async function spotifyLogin() {
+  var v = b64url(crypto.getRandomValues(new Uint8Array(32)));
+  sessionStorage.setItem('spv', v);
+  var ch = b64url(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(v)));
+  var p = new URLSearchParams({
+    client_id: SP.clientId,
+    response_type: 'code',
+    redirect_uri: SP.redirectUri,
+    code_challenge_method: 'S256',
+    code_challenge: ch,
+    scope: 'user-read-private playlist-read-private playlist-read-collaborative user-modify-playback-state user-read-playback-state'
+  });
+  window.location.href = 'https://accounts.spotify.com/authorize?' + p;
+}
+
+async function handleCallback() {
+  var params = new URLSearchParams(window.location.search);
+  var code = params.get('code');
+  if (!code) { checkStoredToken(); return; }
+  window.history.replaceState({}, '', window.location.pathname);
+  var v = sessionStorage.getItem('spv');
+  sessionStorage.removeItem('spv');
+  if (!v) return;
+  try {
+    var res = await fetch('https://accounts.spotify.com/api/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        client_id: SP.clientId,
+        grant_type: 'authorization_code',
+        code: code,
+        redirect_uri: SP.redirectUri,
+        code_verifier: v
+      })
+    });
+    var d = await res.json();
+    if (d.access_token) {
+      SP.token = d.access_token;
+      SP.expiry = Date.now() + (d.expires_in - 60) * 1000;
+      // 存到 sessionStorage 以便重整頁面後保留
+      sessionStorage.setItem('sp_token', SP.token);
+      sessionStorage.setItem('sp_expiry', SP.expiry);
+      await onConnected();
+    }
+  } catch(e) { console.log('token error', e); }
+}
+
+function checkStoredToken() {
+  var t = sessionStorage.getItem('sp_token');
+  var e = parseInt(sessionStorage.getItem('sp_expiry') || '0');
+  if (t && Date.now() < e) {
+    SP.token = t;
+    SP.expiry = e;
+    onConnected();
+  }
+}
+
+async function onConnected() {
+  document.getElementById('connectSection').style.display = 'none';
+  document.getElementById('connectedSection').style.display = 'block';
+  await loadUserProfile();
+  await loadPlaylists();
+}
+
+function disconnect() {
+  SP.token = null; SP.expiry = 0;
+  sessionStorage.removeItem('sp_token');
+  sessionStorage.removeItem('sp_expiry');
+  songs = []; runSongs = []; walkSongs = [];
+  selectedPlaylistId = null;
+  document.getElementById('connectSection').style.display = 'block';
+  document.getElementById('connectedSection').style.display = 'none';
+  checkStart();
+}
+
+function isReady() { return SP.token && Date.now() < SP.expiry; }
+
+// ══════════════════════════════
+//  SPOTIFY API CALLS
+// ══════════════════════════════
+async function spFetch(url) {
+  var res = await fetch(url, { headers: { Authorization: 'Bearer ' + SP.token } });
+  if (!res.ok) throw new Error('Spotify API error ' + res.status);
+  return res.json();
+}
+
+async function loadUserProfile() {
+  try {
+    var d = await spFetch('https://api.spotify.com/v1/me');
+    document.getElementById('userName').textContent = d.display_name || d.id;
+    if (d.images && d.images.length) {
+      document.getElementById('userImg').src = d.images[0].url;
+    } else {
+      document.getElementById('userImg').textContent = '🎵';
+    }
+    SP.isPremium = d.product === 'premium';
+    if (!SP.isPremium) {
+      document.getElementById('premNotice').style.display = 'block';
+    }
+  } catch(e) {}
+}
+
+async function loadPlaylists() {
+  var sec = document.getElementById('playlistSection');
+  sec.innerHTML = '<div style="text-align:center;padding:24px;color:var(--t3);font-size:13px;">載入中…</div>';
+  try {
+    var items = [];
+    var url = 'https://api.spotify.com/v1/me/playlists?limit=50';
+    while (url) {
+      var d = await spFetch(url);
+      items = items.concat(d.items);
+      url = d.next;
+    }
+    renderPlaylists(items);
+  } catch(e) {
+    sec.innerHTML = '<div style="text-align:center;padding:24px;color:var(--run);font-size:13px;">載入失敗，請重新連結</div>';
+  }
+}
+
+function renderPlaylists(items) {
+  var sec = document.getElementById('playlistSection');
+  if (!items.length) {
+    sec.innerHTML = '<div style="text-align:center;padding:24px;color:var(--t3);font-size:13px;">找不到歌單</div>';
+    return;
+  }
+  sec.innerHTML = items.map(function(pl) {
+    var img = pl.images && pl.images.length ? pl.images[0].url : '';
+    var sel = pl.id === selectedPlaylistId;
+    return '<div class="pl-item' + (sel?' selected':'') + '" onclick="selectPlaylist(\''+pl.id+'\',\''+encodeURIComponent(pl.name)+'\','+pl.tracks.total+')">' +
+      (img ? '<img class="pl-img" src="'+img+'" onerror="this.style.display=\'none\'">' : '<div class="pl-img" style="display:flex;align-items:center;justify-content:center;font-size:20px;">🎵</div>') +
+      '<div class="pl-info"><div class="pl-name">'+pl.name+'</div><div class="pl-meta">'+pl.tracks.total+' 首歌曲</div></div>' +
+      '<div class="pl-check">'+(sel?'✓':'')+'</div>' +
+      '</div>';
+  }).join('');
+}
+
+async function selectPlaylist(id, encodedName, total) {
+  selectedPlaylistId = id;
+  var name = decodeURIComponent(encodedName);
+
+  // 重新渲染歌單列表（更新選中狀態）
+  var items = document.querySelectorAll('.pl-item');
+  items.forEach(function(el) { el.classList.remove('selected'); el.querySelector('.pl-check').textContent = ''; });
+  event.currentTarget.classList.add('selected');
+  event.currentTarget.querySelector('.pl-check').textContent = '✓';
+
+  // 開始抓取歌曲 BPM
+  await loadPlaylistTracks(id, name, total);
+}
+
+async function loadPlaylistTracks(playlistId, playlistName, total) {
+  var analyzeSection = document.getElementById('analyzeSection');
+  var progFill = document.getElementById('progFill');
+  var progLbl = document.getElementById('progLbl');
+  analyzeSection.style.display = 'block';
+  document.getElementById('statsRow').style.display = 'none';
+  document.getElementById('trackList').innerHTML = '';
+  songs = [];
+
+  try {
+    // 1. 抓取所有曲目（每次最多100首）
+    var tracks = [];
+    var offset = 0;
+    var limit = 100;
+    while (offset < total) {
+      progLbl.textContent = '抓取歌曲清單 ' + Math.min(offset+limit, total) + '/' + total;
+      progFill.style.width = (offset/total*50) + '%';
+      var d = await spFetch('https://api.spotify.com/v1/playlists/' + playlistId + '/tracks?limit='+limit+'&offset='+offset+'&fields=items(track(id,name,artists,album,duration_ms))');
+      var valid = d.items.filter(function(i){ return i.track && i.track.id; });
+      tracks = tracks.concat(valid.map(function(i){ return i.track; }));
+      offset += limit;
+    }
+
+    // 2. 批量抓取 Audio Features（每次最多100個 ID）
+    var allFeatures = [];
+    for (var i = 0; i < tracks.length; i += 100) {
+      var batch = tracks.slice(i, i+100);
+      var ids = batch.map(function(t){ return t.id; }).join(',');
+      progLbl.textContent = '分析 BPM ' + Math.min(i+100, tracks.length) + '/' + tracks.length;
+      progFill.style.width = (50 + (i/tracks.length)*50) + '%';
+      var fd = await spFetch('https://api.spotify.com/v1/audio-features?ids=' + ids);
+      allFeatures = allFeatures.concat(fd.audio_features || []);
+    }
+
+    // 3. 合併資料
+    songs = tracks.map(function(t, i) {
+      var feat = allFeatures[i];
+      var bpm = feat && feat.tempo ? Math.round(feat.tempo) : null;
+      var phase = classifyBPM(bpm);
+      var img = t.album && t.album.images && t.album.images.length ? t.album.images[t.album.images.length-1].url : '';
+      return {
+        id: t.id, name: t.name,
+        artist: t.artists.map(function(a){ return a.name; }).join(', '),
+        bpm: bpm, phase: phase, img: img
+      };
+    });
+
+    progFill.style.width = '100%';
+    progLbl.textContent = '✓ 完成！共 ' + songs.length + ' 首';
+    setTimeout(function(){ analyzeSection.style.display='none'; }, 1500);
+
+    rebuild();
+    renderTracks();
+    checkStart();
+
+  } catch(e) {
+    progLbl.textContent = '載入失敗：' + e.message;
+    console.log(e);
+  }
+}
+
+function classifyBPM(bpm) {
+  if (!bpm) return 'unknown';
+  var r = cfg.rBPM, w = cfg.wBPM;
+  if (bpm >= r[0]-12 && bpm <= r[1]+12) return 'run';
+  if (bpm >= w[0]-12 && bpm <= w[1]+12) return 'walk';
+  return 'other';
+}
+
+function rebuild() {
+  runSongs = songs.filter(function(s){ return s.phase==='run'; });
+  walkSongs = songs.filter(function(s){ return s.phase==='walk'; });
+  shuf(runSongs); shuf(walkSongs);
+  document.getElementById('stot').textContent = songs.length;
+  document.getElementById('srun').textContent = runSongs.length;
+  document.getElementById('swalk').textContent = walkSongs.length;
+  document.getElementById('statsRow').style.display = 'flex';
+}
+
+function shuf(a) {
+  for (var i=a.length-1;i>0;i--){var j=Math.floor(Math.random()*(i+1)),t=a[i];a[i]=a[j];a[j]=t;}
+}
+
+function renderTracks() {
+  var el = document.getElementById('trackList');
+  if (!songs.length) { el.innerHTML=''; return; }
+  var html = '<div class="card"><div class="st">歌曲 BPM 分類 <span style="font-weight:400;color:var(--t3)">（點擊可修正）</span></div>';
+  songs.forEach(function(s, i) {
+    var bc = s.phase==='run'?'rc':s.phase==='walk'?'wc':'oc';
+    var tag = s.phase==='run'?'<span style="font-size:10px;color:var(--run)">跑步段</span>':
+              s.phase==='walk'?'<span style="font-size:10px;color:var(--walk)">走路段</span>':
+              '<span style="font-size:10px;color:var(--t3)">未分類</span>';
+    html += '<div class="track" onclick="openM('+i+')">' +
+      (s.img?'<img class="t-img" src="'+s.img+'" onerror="this.style.display=\'none\'">':'<div class="t-img" style="display:flex;align-items:center;justify-content:center;font-size:16px;">🎵</div>') +
+      '<div class="t-info"><div class="t-name">'+s.name+'</div><div class="t-artist">'+tag+' '+s.artist+'</div></div>' +
+      '<span class="bpm-chip '+bc+'">'+(s.bpm||'?')+'</span>' +
+      '</div>';
+  });
+  html += '</div>';
+  el.innerHTML = html;
+}
+
+// ══════════════════════════════
+//  BPM MODAL
+// ══════════════════════════════
+function openM(idx) {
+  document.getElementById('mtitle').textContent = songs[idx].name;
+  document.getElementById('minput').value = songs[idx].bpm || '';
+  document.getElementById('merr').style.display = 'none';
+  document.getElementById('modal').classList.add('show');
+  document.getElementById('modal').dataset.idx = idx;
+  setTimeout(function(){ document.getElementById('minput').focus(); }, 150);
+}
+function closeM() { document.getElementById('modal').classList.remove('show'); }
+function saveM() {
+  var v = parseInt(document.getElementById('minput').value);
+  if (isNaN(v)||v<60||v>220) { document.getElementById('merr').style.display='block'; return; }
+  var idx = parseInt(document.getElementById('modal').dataset.idx);
+  songs[idx].bpm = v; songs[idx].phase = classifyBPM(v);
+  closeM(); rebuild(); renderTracks(); checkStart();
+}
+document.getElementById('modal').addEventListener('click', function(e){ if(e.target===this)closeM(); });
+
+// ══════════════════════════════
+//  SETUP
+// ══════════════════════════════
+function adj(t, d) {
+  if(t==='r'){cfg.rMin=Math.max(1,Math.min(10,cfg.rMin+d));document.getElementById('rdisp').textContent=cfg.rMin;}
+  else{cfg.wMin=Math.max(1,Math.min(5,cfg.wMin+d));document.getElementById('wdisp').textContent=cfg.wMin;}
+}
+function preset(r, w, btn) {
+  cfg.rMin=r; cfg.wMin=w;
+  document.getElementById('rdisp').textContent=r;
+  document.getElementById('wdisp').textContent=w;
+  document.querySelectorAll('.pb').forEach(function(b){b.classList.remove('on');});
+  btn.classList.add('on');
+}
+function setZ(row, btn, range) {
+  document.getElementById('zr'+(row+1)).querySelectorAll('.zb').forEach(function(b){b.classList.remove('on');});
+  btn.classList.add('on');
+  var p = range.split('-');
+  if(row===0) cfg.rBPM=[parseInt(p[0]),parseInt(p[1])];
+  else cfg.wBPM=[parseInt(p[0]),parseInt(p[1])];
+  if(songs.length){ songs.forEach(function(s){s.phase=classifyBPM(s.bpm);}); rebuild(); renderTracks(); }
+}
+function checkStart() {
+  var ok = runSongs.length>0 || walkSongs.length>0;
+  document.getElementById('stbtn').disabled = !ok;
+  document.getElementById('shint').textContent = ok ?
+    '跑步段 '+runSongs.length+' 首・走路段 '+walkSongs.length+' 首' :
+    '請先連結 Spotify 並選擇歌單';
+}
+
+// ══════════════════════════════
+//  PLAYER
+// ══════════════════════════════
+function startSession() {
+  rebuild();
+  ses.on=true; ses.isRun=true; ses.round=1; ses.ri=0; ses.wi=0;
+  ses.timer=cfg.rMin*60; ses.phaseSec=ses.timer;
+  go('play'); phaseUI(); loadSong(); togglePlay();
+}
+
+function loadSong() {
+  var list = ses.isRun ? runSongs : walkSongs;
+  var idx = (ses.isRun ? ses.ri : ses.wi) % Math.max(1, list.length);
+  var song = list[idx];
+  if (!song) {
+    document.getElementById('pt').textContent = '此範圍無歌曲';
+    document.getElementById('pa').textContent = '請回歌單頁調整設定';
+    document.getElementById('pbpm').textContent = '—';
+    return;
+  }
+  document.getElementById('pt').textContent = song.name;
+  document.getElementById('pa').textContent = song.artist;
+  document.getElementById('pbpm').textContent = song.bpm || '—';
+  var sa = document.getElementById('sa');
+  if (song.img) {
+    sa.innerHTML = '<img src="'+song.img+'" style="width:100%;height:100%;object-fit:cover;">';
+  } else {
+    sa.innerHTML = '<span id="saEmoji">'+(ses.isRun?'🏃':'🚶')+'</span>';
+  }
+  sa.className = 'sa ' + (ses.isRun?'rsa':'wsa');
+
+  // Media Session
+  if ('mediaSession' in navigator) {
+    navigator.mediaSession.metadata = new MediaMetadata({
+      title: song.name,
+      artist: (ses.isRun?'🏃 跑步段':'🚶 走路段') + '・' + song.bpm + ' BPM',
+      album: '間歇跑 DJ'
+    });
+    navigator.mediaSession.setActionHandler('nexttrack', nextS);
+    navigator.mediaSession.setActionHandler('previoustrack', prevS);
+  }
+
+  // Spotify Premium 播放控制
+  if (SP.isPremium && isReady()) {
+    spPlayTrack(song.id);
+  }
+
+  updateNext();
+}
+
+async function spPlayTrack(trackId) {
+  try {
+    await fetch('https://api.spotify.com/v1/me/player/play', {
+      method: 'PUT',
+      headers: {
+        'Authorization': 'Bearer ' + SP.token,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ uris: ['spotify:track:' + trackId] })
+    });
+  } catch(e) {}
+}
+
+async function spPause() {
+  if (!SP.isPremium || !isReady()) return;
+  try {
+    await fetch('https://api.spotify.com/v1/me/player/pause', {
+      method: 'PUT',
+      headers: { 'Authorization': 'Bearer ' + SP.token }
+    });
+  } catch(e) {}
+}
+
+function updateNext() {
+  var nextRun = !ses.isRun;
+  var list = nextRun ? runSongs : walkSongs;
+  var idx = (nextRun ? ses.ri : ses.wi) % Math.max(1, list.length);
+  var s = list[idx];
+  document.getElementById('nxt').textContent = s ? (nextRun?'🏃 ':'🚶 ') + s.name : '—';
+  document.getElementById('nxtb').textContent = s ? s.bpm+' BPM' : '';
+}
+
+function togglePlay() {
+  ses.playing = !ses.playing;
+  var ico = document.getElementById('pico');
+  if (ses.playing) {
+    ico.innerHTML = '<rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/>';
+    if (!ses.tid) ses.tid = setInterval(tick, 1000);
+    if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
+    wakelock();
+  } else {
+    ico.innerHTML = '<polygon points="5,3 19,12 5,21"/>';
+    clearInterval(ses.tid); ses.tid = null;
+    spPause();
+    if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
+  }
+}
+
+function tick() {
+  ses.timer--;
+  if (ses.timer <= 0) switchPhase();
+  else timerUI();
+}
+
+function switchPhase() {
+  ses.isRun = !ses.isRun;
+  if (ses.isRun) ses.round++;
+  ses.timer = (ses.isRun ? cfg.rMin : cfg.wMin) * 60;
+  ses.phaseSec = ses.timer;
+  if (ses.isRun) ses.ri++; else ses.wi++;
+  phaseUI(); loadSong(); timerUI();
+}
+
+function phaseUI() {
+  var r = ses.isRun;
+  document.getElementById('ppd').className = 'ppd '+(r?'rpd pulse':'wpd');
+  document.getElementById('ppn').className = 'ppn '+(r?'rpn':'wpn');
+  document.getElementById('ppn').textContent = r?'跑步中':'走路恢復';
+  document.getElementById('tval').className = 'tv '+(r?'rt':'wt');
+  document.getElementById('tf').className = 'tf '+(r?'rtf':'wtf');
+  document.getElementById('tlbl').textContent = r?'剩餘跑步時間':'剩餘走路時間';
+  document.getElementById('pbpm').className = 'bb '+(r?'rbb':'wbb');
+  document.getElementById('playb').className = 'pb2 '+(r?'rpb':'wpb');
+  document.getElementById('rnd').textContent = '第 '+ses.round+' 輪';
+  timerUI();
+}
+
+function timerUI() {
+  var m=Math.floor(ses.timer/60), s=ses.timer%60;
+  document.getElementById('tval').textContent = m+':'+(s<10?'0':'')+s;
+  document.getElementById('tf').style.width = (ses.timer/ses.phaseSec*100)+'%';
+}
+
+function nextS() { if(ses.isRun)ses.ri++;else ses.wi++; loadSong(); }
+function prevS() { if(ses.isRun)ses.ri=Math.max(0,ses.ri-1);else ses.wi=Math.max(0,ses.wi-1); loadSong(); }
+function skipPhase() { ses.timer=0; switchPhase(); }
+
+// ══════════════════════════════
+//  WAKE LOCK
+// ══════════════════════════════
+async function wakelock() {
+  if ('wakeLock' in navigator) try { await navigator.wakeLock.request('screen'); } catch(e) {}
+}
+document.addEventListener('visibilitychange', function() {
+  if (document.visibilityState==='visible' && ses.playing) wakelock();
+});
+
+// ══════════════════════════════
+//  INIT
+// ══════════════════════════════
+handleCallback();
+
+// iOS hint
+if (/iphone|ipad|ipod/i.test(navigator.userAgent) && !window.navigator.standalone) {
+  var h = document.createElement('div');
+  h.style.cssText = 'position:fixed;bottom:76px;left:16px;right:16px;background:#111118;border:1px solid rgba(0,200,255,.2);border-radius:12px;padding:11px 14px;font-size:12px;color:#8080a0;line-height:1.7;z-index:500;';
+  h.innerHTML = '📱 <strong style="color:#f5f5fa">加入主畫面</strong>：分享按鈕（□↑）→ 加入主畫面';
+  document.body.appendChild(h);
+  setTimeout(function(){ h.style.transition='opacity 1s'; h.style.opacity='0'; setTimeout(function(){h.remove();},1000); }, 5000);
+}
+</script>
+</body>
+</html>
