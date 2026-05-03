@@ -199,27 +199,17 @@ async function testReccoBeats() {
     html += '⏳ 第二步：用 Spotify ID 查 ReccoBeats BPM…<br>';
     log('rbResult', html);
 
-    // Step B: ReccoBeats Audio Features（正確端點）
-    // 先試 /v1/audio-features?ids= 
+    // Step B: ReccoBeats（用 Spotify ID 查，tempo 直接在 content 裡）
     var fr = await fetch('https://api.reccobeats.com/v1/audio-features?ids=' + spotifyId);
     var fd = await fr.json();
-    html += '<br><b>ReccoBeats /v1/audio-features 回傳：</b><pre>' + JSON.stringify(fd,null,2) + '</pre>';
+    html += '<br><b>ReccoBeats 回傳：</b><pre>' + JSON.stringify(fd,null,2) + '</pre>';
 
-    // 再試 /v1/track?ids= 看能不能找到這首歌
-    var tr = await fetch('https://api.reccobeats.com/v1/track?ids=' + spotifyId);
-    var td = await tr.json();
-    html += '<br><b>ReccoBeats /v1/track 回傳：</b><pre>' + JSON.stringify(td,null,2) + '</pre>';
-
-    // 如果找到 ReccoBeats track ID，再用它查 audio features
-    var rbTracks = Array.isArray(td) ? td : (td.content || []);
-    if (rbTracks.length && rbTracks[0].id) {
-      var rbId = rbTracks[0].id;
-      var fr2 = await fetch('https://api.reccobeats.com/v1/track/' + rbId + '/audio-features');
-      var fd2 = await fr2.json();
-      html += '<br><b>ReccoBeats /v1/track/{rbId}/audio-features：</b><pre>' + JSON.stringify(fd2,null,2) + '</pre>';
-      if (fd2 && fd2.tempo) {
-        html += '<span class="ok" style="font-size:16px">✓ BPM = <strong style="color:#ffd60a">' + Math.round(fd2.tempo) + '</strong></span>';
-      }
+    var items = fd.content || (Array.isArray(fd) ? fd : []);
+    var feat = items[0];
+    if (feat && feat.tempo) {
+      html += '<span class="ok" style="font-size:16px">✓ BPM = <strong style="color:#ffd60a;font-size:28px">' + Math.round(feat.tempo) + '</strong> BPM 🎉</span>';
+    } else {
+      html += '<span class="warn">⚠ 找不到 BPM 資料</span>';
     }
     log('rbResult', html);
 
@@ -268,21 +258,9 @@ async function testFullPipeline() {
 
       var fr = await fetch('https://api.reccobeats.com/v1/audio-features?ids=' + spId);
       var fd = await fr.json();
-      var feats = Array.isArray(fd) ? fd : (fd.content || []);
-      var feat = feats[0];
+      var items = fd.content || (Array.isArray(fd) ? fd : []);
+      var feat = items[0];
       var bpm = feat && feat.tempo ? Math.round(feat.tempo) : null;
-
-      // 如果沒找到，試用 /v1/track?ids= 再查
-      if (!bpm) {
-        var tr2 = await fetch('https://api.reccobeats.com/v1/track?ids=' + spId);
-        var td2 = await tr2.json();
-        var rbTracks = Array.isArray(td2) ? td2 : (td2.content || []);
-        if (rbTracks.length && rbTracks[0].id) {
-          var fr3 = await fetch('https://api.reccobeats.com/v1/track/' + rbTracks[0].id + '/audio-features');
-          var fd3 = await fr3.json();
-          if (fd3 && fd3.tempo) bpm = Math.round(fd3.tempo);
-        }
-      }
 
       html += '<tr><td style="padding:5px 8px">' + s.title + '</td><td>' + s.artist + '</td>' +
         '<td style="font-size:10px;color:#888">' + spId.substring(0,8) + '…</td>' +
