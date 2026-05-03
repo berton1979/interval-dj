@@ -390,15 +390,17 @@ async function handleFiles(files){
     var url=URL.createObjectURL(f);
     var name=f.name.replace(/\.[^.]+$/,'');
     var idx=songs.length;
-    songs.push({name:name,bpm:null,url:url,phase:'analyzing'});
+    songs.push({name:name,bpm:null,url:url,phase:'analyzing',src:''});
     renderList();
 
     try{
       var bpm=await getBPM(url, name);
       songs[idx].bpm=bpm;
       songs[idx].phase=classify(bpm);
+      songs[idx].src=isSpotifyReady()?'Spotify':'本地分析';
     }catch(e){
       songs[idx].phase='unknown';
+      songs[idx].src='';
     }
     renderList(); updateStats();
   }
@@ -485,52 +487,110 @@ function isSpotifyReady() {
   return SP.token && Date.now() < SP.expiry;
 }
 
-// ── 從檔名解析歌手和歌名 ──
+// ── 從檔名基本解析候選詞 ──
 function parseFilename(name) {
-  // 常見格式：「歌手 - 歌名」或「歌名 - 歌手」
   var clean = name
-    .replace(/\.(mp3|aac|wav|flac|m4a|ogg)$/i, '')
-    .replace(/[\[\(].*?[\]\)]/g, '') // 移除括號內容
+    .replace(/\.(mp3|aac|wav|flac|m4a|ogg|opus)$/i, '')
+    .replace(/[\[\(][^\]\)]*[\]\)]/g, '')
+    .replace(/^\d+[\.\-\s]+/, '') // 移除開頭的曲目編號
     .trim();
 
+  var queries = [];
   var parts = clean.split(/\s*[-–—]\s*/);
+
   if (parts.length >= 2) {
-    return [
-      { artist: parts[0].trim(), title: parts.slice(1).join(' ').trim() },
-      { artist: parts[1].trim(), title: parts[0].trim() }
-    ];
+    // 「歌手 - 歌名」和「歌名 - 歌手」兩種都試
+    queries.push(parts[0].trim() + ' ' + parts.slice(1).join(' ').trim());
+    queries.push(parts.slice(1).join(' ').trim() + ' ' + parts[0].trim());
+    // 只用歌名部分
+    queries.push(parts[0].trim());
+    queries.push(parts[parts.length-1].trim());
+  } else {
+    queries.push(clean);
   }
-  return [{ artist: '', title: clean }];
+  return queries.filter(function(q){ return q.length > 1; });
 }
 
-// ── Spotify 搜尋 BPM ──
+// ── Claude API 解析難以辨識的檔名 ──
+async function claudeParseFilename(filename) {
+  try {
+    var res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 200,
+        messages: [{
+          role: 'user',
+          content: '以下是一個音樂檔案的檔名，請判斷它最可能是哪首歌。\n' +
+            '只回傳 JSON，格式：{"artist":"歌手英文或日文名","title":"歌曲英文或日文名","confidence":"high/medium/low"}\n' +
+            '如果無法判斷請回傳 {"artist":"","title":"","confidence":"low"}\n' +
+            '檔名：' + filename
+        }]
+      })
+    });
+    var data = await res.json();
+    var text = data.content && data.content[0] && data.content[0].text;
+    if (!text) return null;
+    var clean = text.replace(/```json|```/g, '').trim();
+    var parsed = JSON.parse(clean);
+    if (parsed.confidence === 'low' || !parsed.title) return null;
+    return parsed.artist
+      ? parsed.artist + ' ' + parsed.title
+      : parsed.title;
+  } catch(e) { return null; }
+}
+
+// ── Spotify 搜尋單一 query ──
+async function spotifySearch(query) {
+  var searchRes = await fetch(
+    'https://api.spotify.com/v1/search?q=' + encodeURIComponent(query) + '&type=track&limit=3&market=TW',
+    { headers: { Authorization: 'Bearer ' + SP.token } }
+  );
+  var searchData = await searchRes.json();
+  var tracks = searchData.tracks && searchData.tracks.items;
+  if (!tracks || !tracks.length) return null;
+  return tracks[0].id;
+}
+
+// ── 取得 Spotify Audio Features BPM ──
+async function spotifyGetBPM(trackId) {
+  var featRes = await fetch(
+    'https://api.spotify.com/v1/audio-features/' + trackId,
+    { headers: { Authorization: 'Bearer ' + SP.token } }
+  );
+  var feat = await featRes.json();
+  return (feat && feat.tempo) ? Math.round(feat.tempo) : null;
+}
+
+// ── Spotify 模糊搜尋 BPM（多層嘗試）──
 async function spotifyBPM(filename) {
   if (!isSpotifyReady()) return null;
-  var candidates = parseFilename(filename);
 
-  for (var i = 0; i < candidates.length; i++) {
-    var c = candidates[i];
-    var q = c.artist ? 'track:' + c.title + ' artist:' + c.artist : c.title;
+  // 第一層：基本檔名解析，多個候選 query
+  var queries = parseFilename(filename);
+  for (var i = 0; i < queries.length; i++) {
     try {
-      var searchRes = await fetch(
-        'https://api.spotify.com/v1/search?q=' + encodeURIComponent(q) + '&type=track&limit=1',
-        { headers: { Authorization: 'Bearer ' + SP.token } }
-      );
-      var searchData = await searchRes.json();
-      var tracks = searchData.tracks && searchData.tracks.items;
-      if (!tracks || !tracks.length) continue;
-
-      var trackId = tracks[0].id;
-      var featRes = await fetch(
-        'https://api.spotify.com/v1/audio-features/' + trackId,
-        { headers: { Authorization: 'Bearer ' + SP.token } }
-      );
-      var feat = await featRes.json();
-      if (feat && feat.tempo) {
-        return Math.round(feat.tempo);
+      var trackId = await spotifySearch(queries[i]);
+      if (trackId) {
+        var bpm = await spotifyGetBPM(trackId);
+        if (bpm) { console.log('[Spotify 基本解析] ' + queries[i] + ' → ' + bpm + ' BPM'); return bpm; }
       }
     } catch(e) { continue; }
   }
+
+  // 第二層：Claude API 解析難以辨識的檔名
+  try {
+    var claudeQuery = await claudeParseFilename(filename);
+    if (claudeQuery) {
+      var trackId2 = await spotifySearch(claudeQuery);
+      if (trackId2) {
+        var bpm2 = await spotifyGetBPM(trackId2);
+        if (bpm2) { console.log('[Claude+Spotify] ' + claudeQuery + ' → ' + bpm2 + ' BPM'); return bpm2; }
+      }
+    }
+  } catch(e) {}
+
   return null;
 }
 
@@ -623,9 +683,10 @@ function renderList(){
     var em=ph==='run'?'🏃':ph==='walk'?'🚶':'🎵';
     var bt=s.bpm?(s.bpm+' BPM'):(s.phase==='analyzing'?'分析中…':'未知');
     var tag=ph==='run'?'<span style="font-size:10px;color:var(--run)">跑步段</span>':ph==='walk'?'<span style="font-size:10px;color:var(--walk)">走路段</span>':'<span style="font-size:10px;color:var(--t3)">未分類</span>';
+    var srcTag = s.src ? '<span style="font-size:9px;color:var(--t3);margin-left:4px;">'+s.src+'</span>' : '';
     html+='<div class="si" onclick="openM('+i+')">'+
       '<div class="sth '+tc+'">'+em+'</div>'+
-      '<div class="sin"><div class="sna">'+s.name+'</div><div class="sme">'+tag+'</div></div>'+
+      '<div class="sin"><div class="sna">'+s.name+'</div><div class="sme">'+tag+srcTag+'</div></div>'+
       '<span class="bch '+bc+'">'+bt+'</span>'+
       '</div>';
   });
