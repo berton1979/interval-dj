@@ -420,9 +420,10 @@ async function getBPM(url){
             }
             for(var i=0;i<len;i++) mono[i]/=ch;
             var mt=new MusicTempo(mono,{sampleRate:buffer.sampleRate});
-            var bpm=Math.round(mt.tempo);
+            var rawBpm=mt.tempo;
+            var bpm=harmonicCorrect(rawBpm);
             ctx.close();
-            resolve(Math.max(60,Math.min(220,bpm)));
+            resolve(bpm);
           } else {
             resolve(fallbackBPM(buffer));
             ctx.close();
@@ -434,6 +435,38 @@ async function getBPM(url){
       })
       .catch(reject);
   });
+}
+
+// ── 諧波校正：修正 music-tempo 常見的倍拍偵測錯誤 ──
+function harmonicCorrect(rawBpm) {
+  // 所有常見的諧波倍數（來自實測的錯誤類型）
+  var ratios = [1, 2, 0.5, 1.5, 0.667, 1.333, 0.75, 1.25, 0.8, 0.6, 1.667];
+
+  // 目標區間：跑步音樂的合理範圍
+  var TARGET_LO = 100, TARGET_HI = 210;
+  // 甜蜜點：大多數跑步音樂集中在這裡（得分加成）
+  var SWEET_LO = 130, SWEET_HI = 185;
+
+  var best = rawBpm, bestScore = -1;
+
+  ratios.forEach(function(r) {
+    var candidate = rawBpm * r;
+    if (candidate < TARGET_LO || candidate > TARGET_HI) return;
+
+    // 基礎分：越接近原始值越可信
+    var score = 1 / (Math.abs(r - 1) + 0.1);
+
+    // 甜蜜點加成
+    if (candidate >= SWEET_LO && candidate <= SWEET_HI) score *= 2.5;
+
+    // 整數接近度加成（真實 BPM 通常接近整數）
+    var rounded = Math.round(candidate);
+    score *= 1 / (Math.abs(candidate - rounded) + 0.5);
+
+    if (score > bestScore) { bestScore = score; best = candidate; }
+  });
+
+  return Math.max(60, Math.min(220, Math.round(best)));
 }
 
 function fallbackBPM(buf){
