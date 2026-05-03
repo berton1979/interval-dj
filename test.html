@@ -163,39 +163,57 @@ async function testPlaylistTracks() {
   }
 }
 
-// ══ STEP 3: ReccoBeats ══
+// ══ STEP 3: Spotify Search → ReccoBeats BPM ══
 async function testReccoBeats() {
+  if (!SP.token) { log('rbResult', '❌ 請先連結 Spotify（Step 1）', 'err'); return; }
   var title = document.getElementById('trackInput').value.trim();
   var artist = document.getElementById('artistInput').value.trim();
   if (!title) { log('rbResult', '❌ 請輸入歌名', 'err'); return; }
-  log('rbResult', '⏳ 查詢 ReccoBeats…', 'warn');
+  log('rbResult', '⏳ 第一步：用 Spotify Search 找 Track ID…', 'warn');
 
   try {
-    // 搜尋歌曲
-    var q = title + (artist ? ' ' + artist : '');
-    var searchRes = await fetch(
-      'https://api.reccobeats.com/v1/track?q=' + encodeURIComponent(q) + '&size=3'
+    // Step A: Spotify Search（這個沒有被封鎖）
+    var q = title + (artist ? ' artist:' + artist : '');
+    var sr = await fetch(
+      'https://api.spotify.com/v1/search?q=' + encodeURIComponent(q) + '&type=track&limit=1&market=TW',
+      { headers: { 'Authorization': 'Bearer ' + SP.token } }
     );
-    var searchData = await searchRes.json();
+    var sd = await sr.json();
 
-    if (!searchRes.ok || !searchData.content || !searchData.content.length) {
-      log('rbResult', '❌ 搜尋失敗 HTTP ' + searchRes.status + '<pre>' + JSON.stringify(searchData, null, 2) + '</pre>', 'err');
+    if (!sr.ok) {
+      log('rbResult', '❌ Spotify Search 失敗 HTTP ' + sr.status + '<pre>' + JSON.stringify(sd,null,2) + '</pre>', 'err');
       return;
     }
 
-    var track = searchData.content[0];
-    var html = '<span class="ok">✓ 找到歌曲：' + track.trackTitle + ' [' + track.id + ']</span><br>';
+    var tracks = sd.tracks && sd.tracks.items;
+    if (!tracks || !tracks.length) {
+      log('rbResult', '❌ Spotify 找不到這首歌', 'err');
+      return;
+    }
 
-    // 查 Audio Features
-    var featRes = await fetch('https://api.reccobeats.com/v1/track/' + track.id + '/audio-features');
-    var feat = await featRes.json();
+    var spotifyId = tracks[0].id;
+    var spotifyName = tracks[0].name;
+    var spotifyArtist = tracks[0].artists[0].name;
+    var html = '<span class="ok">✓ Spotify 找到：' + spotifyName + ' — ' + spotifyArtist + '</span><br>';
+    html += '<span style="color:#888">Spotify ID: ' + spotifyId + '</span><br><br>';
+    html += '⏳ 第二步：用 Spotify ID 查 ReccoBeats BPM…<br>';
+    log('rbResult', html);
 
-    if (!featRes.ok) {
-      html += '<span class="err">❌ Audio Features 失敗 HTTP ' + featRes.status + '</span>';
-      html += '<pre>' + JSON.stringify(feat, null, 2) + '</pre>';
+    // Step B: ReccoBeats Audio Features（用 Spotify ID 查）
+    var fr = await fetch('https://api.reccobeats.com/v1/audio-features?ids=' + spotifyId);
+    var fd = await fr.json();
+
+    if (!fr.ok) {
+      html += '<span class="err">❌ ReccoBeats 失敗 HTTP ' + fr.status + '</span>';
+      html += '<pre>' + JSON.stringify(fd,null,2) + '</pre>';
     } else {
-      html += '<span class="ok">✓ BPM = <strong style="font-size:20px;color:#ffd60a">' + Math.round(feat.tempo) + '</strong></span>';
-      html += '<pre>' + JSON.stringify(feat, null, 2) + '</pre>';
+      var feat = Array.isArray(fd) ? fd[0] : fd;
+      if (feat && feat.tempo) {
+        html += '<span class="ok">✓ BPM = <strong style="font-size:24px;color:#ffd60a">' + Math.round(feat.tempo) + '</strong> BPM</span>';
+        html += '<pre>' + JSON.stringify(feat,null,2) + '</pre>';
+      } else {
+        html += '<span class="warn">⚠ ReccoBeats 回傳資料但無 BPM<br>' + JSON.stringify(fd,null,2) + '</span>';
+      }
     }
     log('rbResult', html);
 
@@ -206,35 +224,49 @@ async function testReccoBeats() {
 
 // ══ STEP 4: Full pipeline ══
 async function testFullPipeline() {
-  if (!window._testTracks || !window._testTracks.length) {
-    log('pipeResult', '❌ 請先完成 Step 2 讀取歌單', 'err');
-    return;
-  }
-  log('pipeResult', '⏳ 開始完整流程測試…', 'warn');
-  var html = '<table style="width:100%;border-collapse:collapse;font-size:12px;">';
-  html += '<tr style="color:#888"><td style="padding:4px 8px">歌名</td><td>歌手</td><td>ReccoBeats BPM</td><td>狀態</td></tr>';
+  if (!SP.token) { log('pipeResult','❌ 請先連結 Spotify','err'); return; }
+  var plId = document.getElementById('plInput').value.trim();
+  if (!plId) { log('pipeResult','❌ 請先在 Step 2 輸入歌單 ID','err'); return; }
+  log('pipeResult', '⏳ 改用 Spotify Search 模式測試 5 首歌…', 'warn');
 
-  for (var i = 0; i < window._testTracks.length; i++) {
-    var t = window._testTracks[i];
-    var artist = t.artists[0].name;
-    var q = t.name + ' ' + artist;
+  // 用搜尋測試幾首已知歌曲
+  var testSongs = [
+    {title:'心臓を捧げよ', artist:'Linked Horizon'},
+    {title:'FLY HIGH!!', artist:'BURNOUT SYNDROMES'},
+    {title:'LOST IN PARADISE', artist:'ALI'},
+    {title:'Inferno', artist:'Mrs. GREEN APPLE'},
+    {title:'紅蓮の弓矢', artist:'Linked Horizon'}
+  ];
+
+  var html = '<table style="width:100%;border-collapse:collapse;font-size:12px;">';
+  html += '<tr style="color:#888;border-bottom:1px solid #333"><td style="padding:6px 8px">歌名</td><td>歌手</td><td>Spotify ID</td><td>ReccoBeats BPM</td></tr>';
+
+  for (var i = 0; i < testSongs.length; i++) {
+    var s = testSongs[i];
     try {
-      var sr = await fetch('https://api.reccobeats.com/v1/track?q=' + encodeURIComponent(q) + '&size=1');
+      var q = s.title + ' artist:' + s.artist;
+      var sr = await fetch(
+        'https://api.spotify.com/v1/search?q=' + encodeURIComponent(q) + '&type=track&limit=1&market=TW',
+        { headers: { 'Authorization': 'Bearer ' + SP.token } }
+      );
       var sd = await sr.json();
-      if (!sr.ok || !sd.content || !sd.content.length) {
-        html += '<tr><td style="padding:4px 8px">' + t.name + '</td><td>' + artist + '</td><td>—</td><td class="err">找不到</td></tr>';
+      var tracks = sd.tracks && sd.tracks.items;
+      if (!tracks || !tracks.length) {
+        html += '<tr><td style="padding:5px 8px">' + s.title + '</td><td>' + s.artist + '</td><td class="err">找不到</td><td>—</td></tr>';
         continue;
       }
-      var rbTrack = sd.content[0];
-      var fr = await fetch('https://api.reccobeats.com/v1/track/' + rbTrack.id + '/audio-features');
+      var spId = tracks[0].id;
+
+      var fr = await fetch('https://api.reccobeats.com/v1/audio-features?ids=' + spId);
       var fd = await fr.json();
-      if (!fr.ok || !fd.tempo) {
-        html += '<tr><td style="padding:4px 8px">' + t.name + '</td><td>' + artist + '</td><td>—</td><td class="warn">無 BPM 資料</td></tr>';
-      } else {
-        html += '<tr><td style="padding:4px 8px">' + t.name + '</td><td>' + artist + '</td><td style="color:#ffd60a;font-weight:bold">' + Math.round(fd.tempo) + ' BPM</td><td class="ok">✓</td></tr>';
-      }
+      var feat = Array.isArray(fd) ? fd[0] : fd;
+      var bpm = feat && feat.tempo ? Math.round(feat.tempo) : null;
+
+      html += '<tr><td style="padding:5px 8px">' + s.title + '</td><td>' + s.artist + '</td>' +
+        '<td style="font-size:10px;color:#888">' + spId.substring(0,8) + '…</td>' +
+        '<td style="color:' + (bpm ? '#ffd60a' : '#ff4d6d') + ';font-weight:bold">' + (bpm ? bpm + ' BPM ✓' : '無資料 ✗') + '</td></tr>';
     } catch(e) {
-      html += '<tr><td style="padding:4px 8px">' + t.name + '</td><td>' + artist + '</td><td>—</td><td class="err">錯誤</td></tr>';
+      html += '<tr><td style="padding:5px 8px">' + s.title + '</td><td>' + s.artist + '</td><td class="err">錯誤</td><td>—</td></tr>';
     }
   }
   html += '</table>';
