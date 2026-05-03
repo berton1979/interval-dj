@@ -654,7 +654,11 @@ function selectPlaylistByIdx(idx) {
     items[idx].classList.add('selected');
     items[idx].querySelector('.pl-check').textContent = '✓';
   }
-async function loadPlaylistTracks(playlistId, playlistName, total) {  var analyzeSection = document.getElementById('analyzeSection');
+  loadPlaylistTracks(pl.id, pl.name);
+}
+
+async function loadPlaylistTracks(playlistId, playlistName) {
+  var analyzeSection = document.getElementById('analyzeSection');
   var progFill = document.getElementById('progFill');
   var progLbl = document.getElementById('progLbl');
   analyzeSection.style.display = 'block';
@@ -663,26 +667,36 @@ async function loadPlaylistTracks(playlistId, playlistName, total) {  var analyz
   songs = [];
 
   try {
-    // 1. 抓取所有曲目（每次最多100首）
+    // 1. 抓取所有曲目（loop 直到沒有 next）
     var tracks = [];
-    var offset = 0;
-    var limit = 100;
-    while (offset < total) {
-      progLbl.textContent = '抓取歌曲清單 ' + Math.min(offset+limit, total) + '/' + total;
-      progFill.style.width = (offset/total*50) + '%';
-      var d = await spFetch('https://api.spotify.com/v1/playlists/' + playlistId + '/tracks?limit='+limit+'&offset='+offset+'&fields=items(track(id,name,artists,album,duration_ms))');
-      var valid = d.items.filter(function(i){ return i.track && i.track.id; });
+    var url = 'https://api.spotify.com/v1/playlists/' + playlistId + '/tracks?limit=100&fields=next,items(track(id,name,artists,album,duration_ms))';
+    var page = 0;
+    while (url) {
+      page++;
+      progLbl.textContent = '抓取歌曲清單 第 ' + page + ' 頁…';
+      progFill.style.width = '20%';
+      var d = await spFetch(url);
+      var valid = (d.items || []).filter(function(i){ return i.track && i.track.id; });
       tracks = tracks.concat(valid.map(function(i){ return i.track; }));
-      offset += limit;
+      url = d.next || null;
     }
 
-    // 2. 批量抓取 Audio Features（每次最多100個 ID）
+    console.log('Total tracks fetched:', tracks.length);
+
+    if (!tracks.length) {
+      progLbl.textContent = '這個歌單是空的';
+      setTimeout(function(){ analyzeSection.style.display='none'; }, 2000);
+      return;
+    }
+
+    // 2. 批量抓取 Audio Features
     var allFeatures = [];
     for (var i = 0; i < tracks.length; i += 100) {
       var batch = tracks.slice(i, i+100);
       var ids = batch.map(function(t){ return t.id; }).join(',');
+      var pct = 20 + ((i / tracks.length) * 80);
       progLbl.textContent = '分析 BPM ' + Math.min(i+100, tracks.length) + '/' + tracks.length;
-      progFill.style.width = (50 + (i/tracks.length)*50) + '%';
+      progFill.style.width = pct + '%';
       var fd = await spFetch('https://api.spotify.com/v1/audio-features?ids=' + ids);
       allFeatures = allFeatures.concat(fd.audio_features || []);
     }
@@ -693,24 +707,17 @@ async function loadPlaylistTracks(playlistId, playlistName, total) {  var analyz
       var bpm = feat && feat.tempo ? Math.round(feat.tempo) : null;
       var phase = classifyBPM(bpm);
       var img = t.album && t.album.images && t.album.images.length ? t.album.images[t.album.images.length-1].url : '';
-      return {
-        id: t.id, name: t.name,
-        artist: t.artists.map(function(a){ return a.name; }).join(', '),
-        bpm: bpm, phase: phase, img: img
-      };
+      return { id: t.id, name: t.name, artist: t.artists.map(function(a){ return a.name; }).join(', '), bpm: bpm, phase: phase, img: img };
     });
 
     progFill.style.width = '100%';
     progLbl.textContent = '✓ 完成！共 ' + songs.length + ' 首';
     setTimeout(function(){ analyzeSection.style.display='none'; }, 1500);
-
-    rebuild();
-    renderTracks();
-    checkStart();
+    rebuild(); renderTracks(); checkStart();
 
   } catch(e) {
     progLbl.textContent = '載入失敗：' + e.message;
-    console.log(e);
+    console.error('loadPlaylistTracks error:', e);
   }
 }
 
