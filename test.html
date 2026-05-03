@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>API 測試</title>
+<style>
+body{font-family:monospace;background:#111;color:#eee;padding:20px;line-height:1.8;}
+button{background:#1db954;border:none;color:#000;padding:10px 20px;border-radius:8px;cursor:pointer;font-size:14px;margin:6px 4px;}
+.section{background:#1a1a2e;border:1px solid #333;border-radius:10px;padding:16px;margin:14px 0;}
+.ok{color:#1db954;}
+.err{color:#ff4d6d;}
+.warn{color:#ffd60a;}
+pre{background:#0a0a10;padding:12px;border-radius:6px;overflow-x:auto;font-size:12px;white-space:pre-wrap;}
+input{background:#222;border:1px solid #444;color:#eee;padding:8px;border-radius:6px;width:100%;margin:4px 0;font-family:monospace;}
+</style>
+</head>
+<body>
+<h2>🧪 間歇跑 DJ — API 測試頁</h2>
+
+<!-- STEP 1: Spotify Login -->
+<div class="section">
+  <h3>Step 1：Spotify 登入</h3>
+  <div id="spStatus" class="warn">未連結</div>
+  <button onclick="spotifyLogin()">連結 Spotify</button>
+  <button onclick="disconnect()">中斷</button>
+</div>
+
+<!-- STEP 2: Test playlist tracks -->
+<div class="section">
+  <h3>Step 2：測試讀取歌單內的歌曲</h3>
+  <p style="font-size:12px;color:#888">貼上你的 Spotify 歌單 ID（URL 裡 playlist/ 後面那串）</p>
+  <input id="plInput" placeholder="例如：37i9dQZF1DXcBWIGoYBM5M" value="">
+  <button onclick="testPlaylistTracks()">測試讀取歌曲</button>
+  <div id="plResult"></div>
+</div>
+
+<!-- STEP 3: Test ReccoBeats -->
+<div class="section">
+  <h3>Step 3：測試 ReccoBeats BPM 查詢</h3>
+  <p style="font-size:12px;color:#888">輸入歌名和歌手名，測試能不能查到 BPM</p>
+  <input id="trackInput" placeholder="歌名" value="心臓を捧げよ">
+  <input id="artistInput" placeholder="歌手名" value="Linked Horizon">
+  <button onclick="testReccoBeats()">查詢 BPM</button>
+  <div id="rbResult"></div>
+</div>
+
+<!-- STEP 4: Full pipeline test -->
+<div class="section">
+  <h3>Step 4：完整流程測試（歌單 → ReccoBeats BPM）</h3>
+  <p style="font-size:12px;color:#888">從歌單讀前 5 首歌，用 ReccoBeats 查各自的 BPM</p>
+  <button onclick="testFullPipeline()">執行完整測試</button>
+  <div id="pipeResult"></div>
+</div>
+
+<script>
+// ══ SPOTIFY PKCE ══
+var SP = {
+  clientId: '28fc753aed184f1ba18f509ce6abee11',
+  redirectUri: 'https://berton1979.github.io/interval-dj/test.html',
+  token: null, expiry: 0
+};
+
+function b64url(buf) {
+  return btoa(String.fromCharCode.apply(null,new Uint8Array(buf)))
+    .replace(/\+/g,'-').replace(/\//g,'_').replace(/=/g,'');
+}
+
+async function spotifyLogin() {
+  var v = b64url(crypto.getRandomValues(new Uint8Array(32)));
+  sessionStorage.setItem('spv', v);
+  var ch = b64url(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(v)));
+  var p = new URLSearchParams({
+    client_id: SP.clientId,
+    response_type: 'code',
+    redirect_uri: SP.redirectUri,
+    code_challenge_method: 'S256',
+    code_challenge: ch,
+    scope: 'playlist-read-private playlist-read-collaborative user-read-private'
+  });
+  window.location.href = 'https://accounts.spotify.com/authorize?' + p;
+}
+
+async function handleCallback() {
+  var params = new URLSearchParams(window.location.search);
+  var code = params.get('code');
+  if (!code) { checkStored(); return; }
+  window.history.replaceState({}, '', window.location.pathname);
+  var v = sessionStorage.getItem('spv');
+  sessionStorage.removeItem('spv');
+  if (!v) return;
+  try {
+    var res = await fetch('https://accounts.spotify.com/api/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        client_id: SP.clientId,
+        grant_type: 'authorization_code',
+        code: code,
+        redirect_uri: SP.redirectUri,
+        code_verifier: v
+      })
+    });
+    var d = await res.json();
+    if (d.access_token) {
+      SP.token = d.access_token;
+      SP.expiry = Date.now() + (d.expires_in - 60) * 1000;
+      sessionStorage.setItem('sp_token', SP.token);
+      sessionStorage.setItem('sp_expiry', SP.expiry);
+      updateSpStatus();
+    }
+  } catch(e) { log('spStatus', '❌ Token 交換失敗: ' + e.message, 'err'); }
+}
+
+function checkStored() {
+  var t = sessionStorage.getItem('sp_token');
+  var e = parseInt(sessionStorage.getItem('sp_expiry') || '0');
+  if (t && Date.now() < e) { SP.token = t; SP.expiry = e; updateSpStatus(); }
+}
+
+function disconnect() {
+  SP.token = null; SP.expiry = 0;
+  sessionStorage.removeItem('sp_token'); sessionStorage.removeItem('sp_expiry');
+  document.getElementById('spStatus').innerHTML = '<span class="warn">已中斷</span>';
+}
+
+function updateSpStatus() {
+  document.getElementById('spStatus').innerHTML = '<span class="ok">✓ Spotify 已連結</span>';
+}
+
+function log(id, msg, cls) {
+  document.getElementById(id).innerHTML = '<div class="' + (cls||'') + '">' + msg + '</div>';
+}
+
+// ══ STEP 2: Spotify playlist tracks ══
+async function testPlaylistTracks() {
+  if (!SP.token) { log('plResult', '❌ 請先連結 Spotify', 'err'); return; }
+  var plId = document.getElementById('plInput').value.trim();
+  if (!plId) { log('plResult', '❌ 請輸入歌單 ID', 'err'); return; }
+  log('plResult', '⏳ 查詢中…', 'warn');
+  try {
+    var res = await fetch(
+      'https://api.spotify.com/v1/playlists/' + plId + '/tracks?limit=5&fields=items(track(id,name,artists))',
+      { headers: { 'Authorization': 'Bearer ' + SP.token } }
+    );
+    var d = await res.json();
+    if (!res.ok) {
+      log('plResult', '❌ HTTP ' + res.status + '<pre>' + JSON.stringify(d, null, 2) + '</pre>', 'err');
+      return;
+    }
+    var tracks = (d.items || []).filter(function(i){ return i.track; });
+    var html = '<span class="ok">✓ 成功讀取 ' + tracks.length + ' 首歌曲</span><pre>';
+    tracks.forEach(function(i, n) {
+      var t = i.track;
+      html += (n+1) + '. ' + t.name + ' — ' + t.artists.map(function(a){return a.name;}).join(', ') + ' [' + t.id + ']\n';
+    });
+    html += '</pre>';
+    log('plResult', html);
+    // 存起來給 Step 4 用
+    window._testTracks = tracks.map(function(i){ return i.track; });
+  } catch(e) {
+    log('plResult', '❌ 錯誤: ' + e.message, 'err');
+  }
+}
+
+// ══ STEP 3: ReccoBeats ══
+async function testReccoBeats() {
+  var title = document.getElementById('trackInput').value.trim();
+  var artist = document.getElementById('artistInput').value.trim();
+  if (!title) { log('rbResult', '❌ 請輸入歌名', 'err'); return; }
+  log('rbResult', '⏳ 查詢 ReccoBeats…', 'warn');
+
+  try {
+    // 搜尋歌曲
+    var q = title + (artist ? ' ' + artist : '');
+    var searchRes = await fetch(
+      'https://api.reccobeats.com/v1/track?q=' + encodeURIComponent(q) + '&size=3'
+    );
+    var searchData = await searchRes.json();
+
+    if (!searchRes.ok || !searchData.content || !searchData.content.length) {
+      log('rbResult', '❌ 搜尋失敗 HTTP ' + searchRes.status + '<pre>' + JSON.stringify(searchData, null, 2) + '</pre>', 'err');
+      return;
+    }
+
+    var track = searchData.content[0];
+    var html = '<span class="ok">✓ 找到歌曲：' + track.trackTitle + ' [' + track.id + ']</span><br>';
+
+    // 查 Audio Features
+    var featRes = await fetch('https://api.reccobeats.com/v1/track/' + track.id + '/audio-features');
+    var feat = await featRes.json();
+
+    if (!featRes.ok) {
+      html += '<span class="err">❌ Audio Features 失敗 HTTP ' + featRes.status + '</span>';
+      html += '<pre>' + JSON.stringify(feat, null, 2) + '</pre>';
+    } else {
+      html += '<span class="ok">✓ BPM = <strong style="font-size:20px;color:#ffd60a">' + Math.round(feat.tempo) + '</strong></span>';
+      html += '<pre>' + JSON.stringify(feat, null, 2) + '</pre>';
+    }
+    log('rbResult', html);
+
+  } catch(e) {
+    log('rbResult', '❌ 錯誤: ' + e.message, 'err');
+  }
+}
+
+// ══ STEP 4: Full pipeline ══
+async function testFullPipeline() {
+  if (!window._testTracks || !window._testTracks.length) {
+    log('pipeResult', '❌ 請先完成 Step 2 讀取歌單', 'err');
+    return;
+  }
+  log('pipeResult', '⏳ 開始完整流程測試…', 'warn');
+  var html = '<table style="width:100%;border-collapse:collapse;font-size:12px;">';
+  html += '<tr style="color:#888"><td style="padding:4px 8px">歌名</td><td>歌手</td><td>ReccoBeats BPM</td><td>狀態</td></tr>';
+
+  for (var i = 0; i < window._testTracks.length; i++) {
+    var t = window._testTracks[i];
+    var artist = t.artists[0].name;
+    var q = t.name + ' ' + artist;
+    try {
+      var sr = await fetch('https://api.reccobeats.com/v1/track?q=' + encodeURIComponent(q) + '&size=1');
+      var sd = await sr.json();
+      if (!sr.ok || !sd.content || !sd.content.length) {
+        html += '<tr><td style="padding:4px 8px">' + t.name + '</td><td>' + artist + '</td><td>—</td><td class="err">找不到</td></tr>';
+        continue;
+      }
+      var rbTrack = sd.content[0];
+      var fr = await fetch('https://api.reccobeats.com/v1/track/' + rbTrack.id + '/audio-features');
+      var fd = await fr.json();
+      if (!fr.ok || !fd.tempo) {
+        html += '<tr><td style="padding:4px 8px">' + t.name + '</td><td>' + artist + '</td><td>—</td><td class="warn">無 BPM 資料</td></tr>';
+      } else {
+        html += '<tr><td style="padding:4px 8px">' + t.name + '</td><td>' + artist + '</td><td style="color:#ffd60a;font-weight:bold">' + Math.round(fd.tempo) + ' BPM</td><td class="ok">✓</td></tr>';
+      }
+    } catch(e) {
+      html += '<tr><td style="padding:4px 8px">' + t.name + '</td><td>' + artist + '</td><td>—</td><td class="err">錯誤</td></tr>';
+    }
+  }
+  html += '</table>';
+  log('pipeResult', html);
+}
+
+// Init
+handleCallback();
+</script>
+</body>
+</html>
