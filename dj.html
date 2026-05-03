@@ -9,7 +9,8 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#06060e">
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Noto+Sans+TC:wght@300;400;500;700&display=swap" rel="stylesheet">
-<script src="https://unpkg.com/music-tempo@1.4.1/dist/music-tempo.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/essentia.js@0.1.3/dist/essentia-wasm.umd.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/essentia.js@0.1.3/dist/essentia.js-core.umd.js"></script>
 <style>
 :root {
   --bg: #06060e;
@@ -400,72 +401,92 @@ async function handleFiles(files){
   rebuild(); checkStart();
 }
 
-// ══════ BPM DETECTION ══════
-async function getBPM(url){
-  return new Promise(function(resolve,reject){
-    var ctx=new(window.AudioContext||window.webkitAudioContext)();
-    fetch(url)
-      .then(function(r){return r.arrayBuffer();})
-      .then(function(buf){return ctx.decodeAudioData(buf);})
-      .then(function(buffer){
-        try{
-          if(window.MusicTempo){
-            // Merge channels to mono
-            var ch=buffer.numberOfChannels;
-            var len=buffer.length;
-            var mono=new Float32Array(len);
-            for(var c=0;c<ch;c++){
-              var d=buffer.getChannelData(c);
-              for(var i=0;i<len;i++) mono[i]+=d[i];
-            }
-            for(var i=0;i<len;i++) mono[i]/=ch;
-            var mt=new MusicTempo(mono,{sampleRate:buffer.sampleRate});
-            var rawBpm=mt.tempo;
-            var bpm=harmonicCorrect(rawBpm);
-            ctx.close();
-            resolve(bpm);
-          } else {
-            resolve(fallbackBPM(buffer));
-            ctx.close();
-          }
-        }catch(e){
-          resolve(fallbackBPM(buffer));
-          ctx.close();
-        }
-      })
-      .catch(reject);
-  });
+// ══════ BPM DETECTION（Essentia.js）══════
+var essentiaInstance = null;
+
+async function getEssentia() {
+  if (essentiaInstance) return essentiaInstance;
+  try {
+    var wasm = await EssentiaWASM();
+    essentiaInstance = new Essentia(wasm);
+    return essentiaInstance;
+  } catch(e) {
+    return null;
+  }
 }
 
-// ── 諧波校正：修正 music-tempo 常見的倍拍偵測錯誤 ──
-function harmonicCorrect(rawBpm) {
-  // 所有常見的諧波倍數（來自實測的錯誤類型）
+async function getBPM(url) {
+  var ctx = new (window.AudioContext || window.webkitAudioContext)();
+  try {
+    var response = await fetch(url);
+    var arrayBuf = await response.arrayBuffer();
+    var buffer = await ctx.decodeAudioData(arrayBuf);
+
+    // Merge to mono
+    var mono = new Float32Array(buffer.length);
+    for (var c = 0; c < buffer.numberOfChannels; c++) {
+      var ch = buffer.getChannelData(c);
+      for (var i = 0; i < buffer.length; i++) mono[i] += ch[i];
+    }
+    for (var i = 0; i < mono.length; i++) mono[i] /= buffer.numberOfChannels;
+
+    var bpm = null;
+
+    // 嘗試 Essentia.js
+    var ess = await getEssentia();
+    if (ess) {
+      try {
+        var vector = ess.arrayToVector(mono);
+        // PercivalBpmEstimator：Essentia 最準確的 BPM 演算法
+        var result = ess.PercivalBpmEstimator(
+          vector,
+          buffer.sampleRate,  // sampleRate
+          2048,               // frameSize
+          128,                // hopSize
+          40,                 // maxBPM
+          210,                // minBPM (注意：Essentia參數順序)
+          buffer.sampleRate   // frameRate
+        );
+        bpm = Math.round(result.bpm);
+        vector.delete();
+      } catch(e) {
+        // Essentia 失敗，用備援
+        bpm = null;
+      }
+    }
+
+    // 備援：自製演算法
+    if (!bpm || bpm < 60 || bpm > 220) {
+      bpm = fallbackBPM(buffer);
+    }
+
+    // 諧波校正
+    bpm = harmonicCorrect(bpm);
+
+    ctx.close();
+    return bpm;
+
+  } catch(e) {
+    ctx.close();
+    throw e;
+  }
+}
+
+// ── 諧波校正（跑步音樂甜蜜點 130–190 BPM）──
+function harmonicCorrect(raw) {
   var ratios = [1, 2, 0.5, 1.5, 0.667, 1.333, 0.75, 1.25, 0.8, 0.6, 1.667];
-
-  // 目標區間：跑步音樂的合理範圍
-  var TARGET_LO = 100, TARGET_HI = 210;
-  // 甜蜜點：大多數跑步音樂集中在這裡（得分加成）
-  var SWEET_LO = 130, SWEET_HI = 185;
-
-  var best = rawBpm, bestScore = -1;
-
+  var LO = 90, HI = 215, SLO = 130, SHI = 190;
+  var best = raw, bestScore = -1;
   ratios.forEach(function(r) {
-    var candidate = rawBpm * r;
-    if (candidate < TARGET_LO || candidate > TARGET_HI) return;
-
-    // 基礎分：越接近原始值越可信
-    var score = 1 / (Math.abs(r - 1) + 0.1);
-
-    // 甜蜜點加成
-    if (candidate >= SWEET_LO && candidate <= SWEET_HI) score *= 2.5;
-
-    // 整數接近度加成（真實 BPM 通常接近整數）
-    var rounded = Math.round(candidate);
-    score *= 1 / (Math.abs(candidate - rounded) + 0.5);
-
-    if (score > bestScore) { bestScore = score; best = candidate; }
+    var c = raw * r;
+    if (c < LO || c > HI) return;
+    // 越接近原始值越可信，甜蜜點加成
+    var score = 1 / (Math.abs(r - 1) + 0.15);
+    if (c >= SLO && c <= SHI) score *= 3;
+    // 整數加成
+    score *= 1 / (Math.abs(c - Math.round(c)) + 0.3);
+    if (score > bestScore) { bestScore = score; best = c; }
   });
-
   return Math.max(60, Math.min(220, Math.round(best)));
 }
 
