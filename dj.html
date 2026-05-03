@@ -9,8 +9,6 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#06060e">
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Noto+Sans+TC:wght@300;400;500;700&display=swap" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/essentia.js@0.1.3/dist/essentia-wasm.umd.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/essentia.js@0.1.3/dist/essentia.js-core.umd.js"></script>
 <style>
 :root {
   --bg: #06060e;
@@ -202,6 +200,16 @@ html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--t1);font-
       <div class="imp-sub">MP3 · AAC · WAV · FLAC · 可一次選多首</div>
       <input type="file" id="fi" multiple accept="audio/*">
     </div>
+    <!-- Spotify 連結狀態 -->
+    <div id="spBox" style="display:flex;align-items:center;gap:10px;background:var(--s1);border:1px solid var(--bd);border-radius:14px;padding:12px 14px;margin-bottom:14px;">
+      <div style="width:36px;height:36px;border-radius:50%;background:#1DB954;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;">🎵</div>
+      <div style="flex:1;">
+        <div style="font-size:13px;font-weight:500;" id="spTitle">連結 Spotify</div>
+        <div style="font-size:11px;color:var(--t3);" id="spSub">連結後可自動查詢歌曲 BPM</div>
+      </div>
+      <button id="spBtn" onclick="spotifyLogin()" style="background:#1DB954;border:none;border-radius:20px;padding:8px 16px;font-size:12px;color:#000;font-weight:700;cursor:pointer;font-family:var(--fb);flex-shrink:0;">連結</button>
+    </div>
+
     <div id="apSec" style="display:none">
       <div class="ap"><div class="af" id="af"></div></div>
       <div class="al" id="al">準備中…</div>
@@ -386,7 +394,7 @@ async function handleFiles(files){
     renderList();
 
     try{
-      var bpm=await getBPM(url);
+      var bpm=await getBPM(url, name);
       songs[idx].bpm=bpm;
       songs[idx].phase=classify(bpm);
     }catch(e){
@@ -401,71 +409,151 @@ async function handleFiles(files){
   rebuild(); checkStart();
 }
 
-// ══════ BPM DETECTION（Essentia.js）══════
-var essentiaInstance = null;
+// ══════ SPOTIFY PKCE ══════
+var SP = {
+  clientId: '28fc753aed184f1ba18f509ce6abee11',
+  redirectUri: 'https://berton1979.github.io/interval-dj/dj.html',
+  token: null,
+  expiry: 0
+};
 
-async function getEssentia() {
-  if (essentiaInstance) return essentiaInstance;
-  try {
-    var wasm = await EssentiaWASM();
-    essentiaInstance = new Essentia(wasm);
-    return essentiaInstance;
-  } catch(e) {
-    return null;
-  }
+function base64URLEncode(buf) {
+  return btoa(String.fromCharCode.apply(null, new Uint8Array(buf)))
+    .replace(/\+/g,'-').replace(/\//g,'_').replace(/=/g,'');
 }
 
-async function getBPM(url) {
+async function spotifyLogin() {
+  var verifier = base64URLEncode(crypto.getRandomValues(new Uint8Array(32)));
+  sessionStorage.setItem('sp_verifier', verifier);
+  var hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier));
+  var challenge = base64URLEncode(hash);
+  var params = new URLSearchParams({
+    client_id: SP.clientId,
+    response_type: 'code',
+    redirect_uri: SP.redirectUri,
+    code_challenge_method: 'S256',
+    code_challenge: challenge,
+    scope: 'user-read-private'
+  });
+  window.location.href = 'https://accounts.spotify.com/authorize?' + params;
+}
+
+async function handleSpotifyCallback() {
+  var params = new URLSearchParams(window.location.search);
+  var code = params.get('code');
+  if (!code) return;
+
+  // 清除 URL 上的 code，避免重複使用
+  window.history.replaceState({}, '', window.location.pathname);
+
+  var verifier = sessionStorage.getItem('sp_verifier');
+  if (!verifier) return;
+  sessionStorage.removeItem('sp_verifier');
+
+  try {
+    var res = await fetch('https://accounts.spotify.com/api/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        client_id: SP.clientId,
+        grant_type: 'authorization_code',
+        code: code,
+        redirect_uri: SP.redirectUri,
+        code_verifier: verifier
+      })
+    });
+    var data = await res.json();
+    if (data.access_token) {
+      SP.token = data.access_token;
+      SP.expiry = Date.now() + (data.expires_in - 60) * 1000;
+      updateSpotifyUI(true);
+    }
+  } catch(e) { console.log('Spotify token error', e); }
+}
+
+function updateSpotifyUI(connected) {
+  document.getElementById('spTitle').textContent = connected ? '✓ Spotify 已連結' : '連結 Spotify';
+  document.getElementById('spSub').textContent = connected ? 'BPM 將從 Spotify 自動查詢' : '連結後可自動查詢歌曲 BPM';
+  var btn = document.getElementById('spBtn');
+  btn.textContent = connected ? '中斷' : '連結';
+  btn.style.background = connected ? 'var(--s3)' : '#1DB954';
+  btn.style.color = connected ? 'var(--t2)' : '#000';
+  btn.onclick = connected ? function(){SP.token=null;SP.expiry=0;updateSpotifyUI(false);} : spotifyLogin;
+}
+
+function isSpotifyReady() {
+  return SP.token && Date.now() < SP.expiry;
+}
+
+// ── 從檔名解析歌手和歌名 ──
+function parseFilename(name) {
+  // 常見格式：「歌手 - 歌名」或「歌名 - 歌手」
+  var clean = name
+    .replace(/\.(mp3|aac|wav|flac|m4a|ogg)$/i, '')
+    .replace(/[\[\(].*?[\]\)]/g, '') // 移除括號內容
+    .trim();
+
+  var parts = clean.split(/\s*[-–—]\s*/);
+  if (parts.length >= 2) {
+    return [
+      { artist: parts[0].trim(), title: parts.slice(1).join(' ').trim() },
+      { artist: parts[1].trim(), title: parts[0].trim() }
+    ];
+  }
+  return [{ artist: '', title: clean }];
+}
+
+// ── Spotify 搜尋 BPM ──
+async function spotifyBPM(filename) {
+  if (!isSpotifyReady()) return null;
+  var candidates = parseFilename(filename);
+
+  for (var i = 0; i < candidates.length; i++) {
+    var c = candidates[i];
+    var q = c.artist ? 'track:' + c.title + ' artist:' + c.artist : c.title;
+    try {
+      var searchRes = await fetch(
+        'https://api.spotify.com/v1/search?q=' + encodeURIComponent(q) + '&type=track&limit=1',
+        { headers: { Authorization: 'Bearer ' + SP.token } }
+      );
+      var searchData = await searchRes.json();
+      var tracks = searchData.tracks && searchData.tracks.items;
+      if (!tracks || !tracks.length) continue;
+
+      var trackId = tracks[0].id;
+      var featRes = await fetch(
+        'https://api.spotify.com/v1/audio-features/' + trackId,
+        { headers: { Authorization: 'Bearer ' + SP.token } }
+      );
+      var feat = await featRes.json();
+      if (feat && feat.tempo) {
+        return Math.round(feat.tempo);
+      }
+    } catch(e) { continue; }
+  }
+  return null;
+}
+
+// ══════ BPM DETECTION ══════
+async function getBPM(url, filename) {
+  // 1. 優先用 Spotify API（最準確）
+  if (isSpotifyReady() && filename) {
+    try {
+      var spBpm = await spotifyBPM(filename);
+      if (spBpm && spBpm >= 60 && spBpm <= 220) return spBpm;
+    } catch(e) {}
+  }
+
+  // 2. 本地音訊分析（備援）
   var ctx = new (window.AudioContext || window.webkitAudioContext)();
   try {
     var response = await fetch(url);
     var arrayBuf = await response.arrayBuffer();
     var buffer = await ctx.decodeAudioData(arrayBuf);
-
-    // Merge to mono
-    var mono = new Float32Array(buffer.length);
-    for (var c = 0; c < buffer.numberOfChannels; c++) {
-      var ch = buffer.getChannelData(c);
-      for (var i = 0; i < buffer.length; i++) mono[i] += ch[i];
-    }
-    for (var i = 0; i < mono.length; i++) mono[i] /= buffer.numberOfChannels;
-
-    var bpm = null;
-
-    // 嘗試 Essentia.js
-    var ess = await getEssentia();
-    if (ess) {
-      try {
-        var vector = ess.arrayToVector(mono);
-        // PercivalBpmEstimator：Essentia 最準確的 BPM 演算法
-        var result = ess.PercivalBpmEstimator(
-          vector,
-          buffer.sampleRate,  // sampleRate
-          2048,               // frameSize
-          128,                // hopSize
-          40,                 // maxBPM
-          210,                // minBPM (注意：Essentia參數順序)
-          buffer.sampleRate   // frameRate
-        );
-        bpm = Math.round(result.bpm);
-        vector.delete();
-      } catch(e) {
-        // Essentia 失敗，用備援
-        bpm = null;
-      }
-    }
-
-    // 備援：自製演算法
-    if (!bpm || bpm < 60 || bpm > 220) {
-      bpm = fallbackBPM(buffer);
-    }
-
-    // 諧波校正
+    var bpm = fallbackBPM(buffer);
     bpm = harmonicCorrect(bpm);
-
     ctx.close();
     return bpm;
-
   } catch(e) {
     ctx.close();
     throw e;
@@ -731,6 +819,9 @@ document.addEventListener('visibilitychange',function(){
     if(ses.audio&&ses.audio.paused) ses.audio.play().catch(function(){});
   }
 });
+
+// 處理 Spotify OAuth callback
+handleSpotifyCallback();
 
 // iOS hint
 if(/iphone|ipad|ipod/i.test(navigator.userAgent)&&!window.navigator.standalone){
